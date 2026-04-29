@@ -32,8 +32,9 @@ body {
 .cards {
   margin-top: 1.5rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
+  align-items: stretch;
 }
 
 .auth-card,
@@ -152,25 +153,40 @@ button:disabled {
 .card {
   background: #ffffff;
   border-radius: 14px;
-  padding: 1rem;
+  padding: 1.15rem 1.1rem;
   border: 1px solid #e2e8f0;
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 168px;
 }
 
 .card h3 {
-  margin-top: 0;
+  margin: 0 0 0.65rem;
+  text-align: center;
+  font-size: 1.05rem;
+  line-height: 1.3;
 }
 
 .card p {
   color: #334155;
+  margin: 0;
+  text-align: center;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  flex: 1;
 }
 
 .card-link .card-cta {
   display: inline-block;
-  margin-top: 0.65rem;
+  margin-top: auto;
+  padding-top: 0.85rem;
   color: #0f172a;
   font-weight: 600;
   text-decoration: none;
+  align-self: center;
+  text-align: center;
 }
 
 .card-link .card-cta:hover {
@@ -221,6 +237,79 @@ button:disabled {
   align-items: start;
 }
 
+.ingestao-history {
+  grid-column: 1 / -1;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  padding: 1rem 1.15rem;
+}
+
+.ingestao-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.ingestao-history-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.ingestao-history-head button {
+  font-size: 0.88rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.runs-table-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.runs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.runs-table th,
+.runs-table td {
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.runs-table th {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.runs-table tr:last-child td {
+  border-bottom: none;
+}
+
+.runs-table .cell-ok {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.runs-table .cell-fail {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.runs-table .cell-mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+}
+
 .ingestao-sidebar {
   background: #ffffff;
   border-radius: 14px;
@@ -251,17 +340,20 @@ button:disabled {
 }
 
 .ingestao-nav-item {
-  text-align: left;
+  text-align: center;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
   border-radius: 10px;
-  padding: 0.65rem 0.75rem;
+  padding: 0.75rem 0.65rem;
+  min-height: 4.5rem;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.25rem;
   font: inherit;
   color: inherit;
+  align-items: center;
+  justify-content: center;
 }
 
 .ingestao-nav-item:hover {
@@ -277,12 +369,14 @@ button:disabled {
 .ingestao-nav-label {
   font-weight: 600;
   font-size: 0.95rem;
+  text-align: center;
 }
 
 .ingestao-nav-hint {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   opacity: 0.88;
   line-height: 1.3;
+  text-align: center;
 }
 
 .ingestao-nav-item.active .ingestao-nav-hint {
@@ -313,6 +407,7 @@ button:disabled {
 .ingestao-panel h1 {
   margin: 0 0 0.5rem;
   font-size: 1.35rem;
+  text-align: center;
 }
 
 .ingestao-desc {
@@ -320,6 +415,7 @@ button:disabled {
   margin: 0 0 1rem;
   font-size: 0.95rem;
   line-height: 1.45;
+  text-align: center;
 }
 
 .ingestao-desc code {

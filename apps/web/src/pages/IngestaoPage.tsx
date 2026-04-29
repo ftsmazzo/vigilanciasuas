@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -56,8 +56,57 @@ type Props = {
   token: string;
 };
 
+type IngestionRunRow = {
+  id: number;
+  source: string;
+  dataset: string;
+  target_table: string;
+  strategy: string;
+  file_name: string;
+  status: string;
+  row_count: number;
+  created_by_email: string;
+  created_at: string;
+  finished_at: string | null;
+  error_message: string | null;
+};
+
+function formatRunDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
 export default function IngestaoPage({ token }: Props) {
   const [tab, setTab] = useState<TabId>("cadu");
+  const [runs, setRuns] = useState<IngestionRunRow[]>([]);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [runsError, setRunsError] = useState("");
+
+  const loadRuns = useCallback(async () => {
+    setRunsLoading(true);
+    setRunsError("");
+    try {
+      const response = await fetch(`${API_URL}/api/v1/ingestion/runs`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        throw new Error("Falha ao listar execuções");
+      }
+      const data = (await response.json()) as IngestionRunRow[];
+      setRuns(data);
+    } catch {
+      setRunsError("Não foi possível carregar o histórico de ingestões.");
+      setRuns([]);
+    } finally {
+      setRunsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadRuns();
+  }, [loadRuns]);
 
   // CADU
   const [caduFile, setCaduFile] = useState<File | null>(null);
@@ -110,6 +159,7 @@ export default function IngestaoPage({ token }: Props) {
       setCaduProgress(100);
       setCaduStatus(`Dados inseridos com sucesso. Total de ${res.data.row_count} registros.`);
       setCaduFile(null);
+      await loadRuns();
     } else {
       setCaduStatus(res.errorText || "Falha na ingestão.");
     }
@@ -136,6 +186,7 @@ export default function IngestaoPage({ token }: Props) {
       setPbfProgress(100);
       setPbfStatus(`Dados inseridos com sucesso. Total de ${res.data.row_count} registros na base Bolsa Família.`);
       setPbfFile(null);
+      await loadRuns();
     } else {
       setPbfStatus(res.errorText || "Falha na ingestão.");
     }
@@ -162,6 +213,7 @@ export default function IngestaoPage({ token }: Props) {
       setBpcProgress(100);
       setBpcStatus(`Dados inseridos com sucesso. Total de ${res.data.row_count} registros na base BPC.`);
       setBpcFile(null);
+      await loadRuns();
     } else {
       setBpcStatus(res.errorText || "Falha na ingestão.");
     }
@@ -196,6 +248,7 @@ export default function IngestaoPage({ token }: Props) {
         `Dados inseridos com sucesso. Competência ${String(res.data.competencia)}. Total de ${res.data.row_count} registros.`
       );
       setSibecFile(null);
+      await loadRuns();
     } else {
       setSibecStatus(res.errorText || "Falha na ingestão.");
     }
@@ -405,6 +458,57 @@ export default function IngestaoPage({ token }: Props) {
           </section>
         )}
       </main>
+
+      <section className="ingestao-history" aria-labelledby="ingestao-history-title">
+        <div className="ingestao-history-head">
+          <h2 id="ingestao-history-title">Histórico recente de ingestões</h2>
+          <button type="button" onClick={() => loadRuns()} disabled={runsLoading}>
+            {runsLoading ? "Atualizando…" : "Atualizar lista"}
+          </button>
+        </div>
+        {runsError && <p className="error">{runsError}</p>}
+        {!runsError && runs.length === 0 && !runsLoading && (
+          <p className="ingestao-desc" style={{ margin: 0 }}>
+            Nenhuma execução registrada ainda.
+          </p>
+        )}
+        {runs.length > 0 && (
+          <div className="runs-table-wrap">
+            <table className="runs-table">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Fonte</th>
+                  <th>Dataset</th>
+                  <th>Tabela RAW</th>
+                  <th>Estratégia</th>
+                  <th>Linhas</th>
+                  <th>Status</th>
+                  <th>Arquivo</th>
+                  <th>Usuário</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => (
+                  <tr key={run.id}>
+                    <td>{formatRunDate(run.finished_at || run.created_at)}</td>
+                    <td>{run.source}</td>
+                    <td>{run.dataset}</td>
+                    <td className="cell-mono">raw.{run.target_table}</td>
+                    <td>{run.strategy}</td>
+                    <td>{run.row_count}</td>
+                    <td className={run.status === "success" ? "cell-ok" : "cell-fail"}>{run.status}</td>
+                    <td className="cell-mono" title={run.file_name}>
+                      {run.file_name.length > 28 ? `${run.file_name.slice(0, 28)}…` : run.file_name}
+                    </td>
+                    <td>{run.created_by_email}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
