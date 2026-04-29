@@ -7,7 +7,7 @@ type Props = {
   token: string;
 };
 
-type VigilanciaTab = "familia" | "domicilio";
+type VigilanciaTab = "familia" | "domicilio" | "pessoas";
 
 type FamiliaRefreshResponse = {
   status: string;
@@ -32,6 +32,15 @@ type DomicilioRefreshResponse = {
   warnings: string[];
 };
 
+type PessoasRefreshResponse = {
+  status: string;
+  view_schema: string;
+  view_name: string;
+  row_count: number;
+  elapsed_ms: number;
+  warnings: string[];
+};
+
 export default function VigilanciaPage({ token }: Props) {
   const [tab, setTab] = useState<VigilanciaTab>("familia");
   const [busy, setBusy] = useState(false);
@@ -39,6 +48,7 @@ export default function VigilanciaPage({ token }: Props) {
   const [error, setError] = useState("");
   const [familiaResult, setFamiliaResult] = useState<FamiliaRefreshResponse | null>(null);
   const [domicilioResult, setDomicilioResult] = useState<DomicilioRefreshResponse | null>(null);
+  const [pessoasResult, setPessoasResult] = useState<PessoasRefreshResponse | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -88,6 +98,36 @@ export default function VigilanciaPage({ token }: Props) {
       }
       stopProgressAnimation(100);
       setFamiliaResult(data);
+    } catch (e) {
+      stopProgressAnimation(0);
+      setError(e instanceof Error ? e.message : "Erro inesperado.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshPessoas() {
+    setError("");
+    setPessoasResult(null);
+    setBusy(true);
+    startProgressAnimation();
+    try {
+      const response = await fetch(`${API_URL}/api/v1/vigilance/materialized-views/pessoas/refresh`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await response.json().catch(() => ({}))) as PessoasRefreshResponse & { detail?: unknown };
+      if (!response.ok) {
+        const msg =
+          typeof data.detail === "string"
+            ? data.detail
+            : Array.isArray(data.detail)
+              ? JSON.stringify(data.detail)
+              : "Falha ao gerar a visão Pessoas.";
+        throw new Error(msg);
+      }
+      stopProgressAnimation(100);
+      setPessoasResult(data);
     } catch (e) {
       stopProgressAnimation(0);
       setError(e instanceof Error ? e.message : "Erro inesperado.");
@@ -155,6 +195,17 @@ export default function VigilanciaPage({ token }: Props) {
           >
             <span className="ingestao-nav-label">Domicílio</span>
             <span className="ingestao-nav-hint">Moradia, riscos e GPTE (CADU)</span>
+          </button>
+          <button
+            type="button"
+            className={`ingestao-nav-item ${tab === "pessoas" ? "active" : ""}`}
+            onClick={() => {
+              setError("");
+              setTab("pessoas");
+            }}
+          >
+            <span className="ingestao-nav-label">Pessoas</span>
+            <span className="ingestao-nav-hint">Membros, escolaridade, rua (CADU)</span>
           </button>
         </nav>
         <Link to="/" className="ingestao-back">
@@ -275,6 +326,61 @@ export default function VigilanciaPage({ token }: Props) {
                   {domicilioResult.warnings.length > 0 && (
                     <ul className="vig-warnings">
                       {domicilioResult.warnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === "pessoas" && (
+            <section className="ingestao-panel">
+              <h1>Visão materializada — Pessoas</h1>
+              <p className="ingestao-desc">
+                <strong>Todas as linhas</strong> de <code className="inline-code">raw.cecad__cadu</code> (uma por membro
+                no arquivo “tudo”), com nomes de campos simplificados e sanitização. <strong>idade</strong> é calculada
+                em anos completos a partir de <code className="inline-code">data_nascimento</code> (parser igual ao das
+                outras views). <strong>cadu_row_id</strong> é o <code className="inline-code">id</code> da linha na RAW.
+                Tabela: <strong>vig.mvw_pessoas</strong>.
+              </p>
+
+              <div className="vig-actions">
+                <button type="button" onClick={() => void refreshPessoas()} disabled={busy}>
+                  {busy ? "Gerando visão…" : "Gerar / atualizar visão Pessoas"}
+                </button>
+              </div>
+
+              <div className="progress-wrap" aria-live="polite">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${progress}%` }} />
+                </div>
+                <small>
+                  {busy
+                    ? "Recriando materialized view no PostgreSQL…"
+                    : progress === 100
+                      ? "Concluído."
+                      : "Aguardando comando."}
+                </small>
+              </div>
+
+              {error && <p className="error">{error}</p>}
+
+              {pessoasResult && (
+                <div className="vig-result">
+                  <p className="status-ok" style={{ marginTop: "0.75rem" }}>
+                    Visão <code className="inline-code">vig.{pessoasResult.view_name}</code> atualizada:{" "}
+                    <strong>{pessoasResult.row_count.toLocaleString("pt-BR")}</strong> registros em{" "}
+                    {(pessoasResult.elapsed_ms / 1000).toLocaleString("pt-BR", {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    })}
+                    s.
+                  </p>
+                  {pessoasResult.warnings.length > 0 && (
+                    <ul className="vig-warnings">
+                      {pessoasResult.warnings.map((w) => (
                         <li key={w}>{w}</li>
                       ))}
                     </ul>

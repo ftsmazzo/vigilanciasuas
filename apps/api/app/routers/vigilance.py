@@ -8,6 +8,7 @@ from ..deps import get_current_user
 from ..models import User
 from ..vigilance.domicilio_mview import refresh_domicilio_mview
 from ..vigilance.familia_mview import refresh_familia_mview
+from ..vigilance.pessoas_mview import refresh_pessoas_mview
 
 router = APIRouter(prefix="/vigilance", tags=["vigilance"])
 
@@ -72,6 +73,35 @@ def refresh_familia_domicilio(
         "status": "success",
         "view_schema": "vig",
         "view_name": "mvw_familia_domicilio",
+        "row_count": result.row_count,
+        "elapsed_ms": elapsed_ms,
+        "warnings": result.warnings,
+    }
+
+
+@router.post("/materialized-views/pessoas/refresh")
+def refresh_pessoas(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Recria `vig.mvw_pessoas` (uma linha por membro no CADU, com idade calculada)."""
+    t0 = time.perf_counter()
+    try:
+        with db.bind.begin() as conn:
+            result = refresh_pessoas_mview(conn)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Falha ao gerar visão Pessoas: {exc}",
+        ) from exc
+
+    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+    return {
+        "status": "success",
+        "view_schema": "vig",
+        "view_name": "mvw_pessoas",
         "row_count": result.row_count,
         "elapsed_ms": elapsed_ms,
         "warnings": result.warnings,
