@@ -44,8 +44,15 @@ def _parse_csv(content: bytes, delimiter: str) -> tuple[list[str], list[dict[str
     reader = csv.DictReader(StringIO(text_content), delimiter=delimiter)
     if not reader.fieldnames:
         raise HTTPException(status_code=400, detail="CSV sem cabeçalho.")
-    headers = [h.strip() if h else "" for h in reader.fieldnames]
-    rows = list(reader)
+    original_fieldnames = list(reader.fieldnames)
+    headers = [h.strip() if h else "" for h in original_fieldnames]
+    rows: list[dict[str, str | None]] = []
+    for row in reader:
+        normalized_row: dict[str, str | None] = {}
+        for idx, original_name in enumerate(original_fieldnames):
+            clean_name = headers[idx]
+            normalized_row[clean_name] = row.get(original_name)
+        rows.append(normalized_row)
     return headers, rows
 
 
