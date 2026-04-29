@@ -14,5 +14,8 @@ class Settings(BaseSettings):
     bootstrap_superadmin_password: str | None = None
     bootstrap_superadmin_name: str = "Super Admin"
 
+    # Origens CORS permitidas, separadas por vírgula. Use "*" só em desenvolvimento.
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
 
 settings = Settings()

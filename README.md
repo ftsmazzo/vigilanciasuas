@@ -30,9 +30,48 @@ Ao iniciar a API, se esse email ainda nao existir no banco, o usuario `superadmi
 
 ## Estrutura do projeto
 
-- `apps/api`: API FastAPI com login e gestao inicial de usuarios
-- `apps/web`: dashboard inicial com cards modernos
+- `apps/api`: codigo da API FastAPI
+- `apps/web`: codigo do frontend React + Vite
+- `backend/Dockerfile`: imagem de producao da API (contexto = raiz do repo)
+- `frontend/Dockerfile`: imagem de producao do frontend (build estatico + nginx)
 - `DadosBrutos`: fontes iniciais de dados para ingestao
+
+## EasyPanel (deploy)
+
+Configure **Build Path** como `/` (raiz) e aponte o Dockerfile de cada servico:
+
+| Servico  | Arquivo Dockerfile   |
+|----------|----------------------|
+| Backend  | `backend/Dockerfile` |
+| Frontend | `frontend/Dockerfile` |
+
+### Backend — variaveis de ambiente (runtime)
+
+| Variavel | Obrigatoria | Descricao |
+|----------|-------------|-----------|
+| `DATABASE_URL` | Sim | URL SQLAlchemy/async compativel com `psycopg`. Ex.: `postgresql+psycopg://usuario:senha@host-interno:5432/nome_do_banco` |
+| `JWT_SECRET_KEY` | Sim | Chave secreta forte (nao reutilize a senha do banco). |
+| `CORS_ORIGINS` | Recomendado | URLs do frontend, separadas por virgula. Ex.: `https://app.seudominio.gov.br`. Em dev local o padrao ja cobre `localhost:3000`. |
+| `JWT_ALGORITHM` | Nao | Padrao: `HS256` |
+| `JWT_EXPIRE_MINUTES` | Nao | Padrao: `60` |
+| `REDIS_URL` | Nao por enquanto | Ex.: `redis://host-interno:6379/0` (reservado para filas de ingestao). |
+| `BOOTSTRAP_SUPERADMIN_EMAIL` | Primeiro deploy | Email do primeiro SuperAdmin. |
+| `BOOTSTRAP_SUPERADMIN_PASSWORD` | Primeiro deploy | Senha inicial (troque apos o primeiro login se desejar). |
+| `BOOTSTRAP_SUPERADMIN_NAME` | Nao | Nome exibido; padrao: `Super Admin`. |
+
+**Dica:** no EasyPanel, use o hostname **interno** do servico PostgreSQL que o painel fornece (nao `localhost` dentro do container da API).
+
+### Frontend — build args
+
+O Vite embute `VITE_API_URL` no build. Defina como **build argument** no servico do frontend:
+
+| Build arg | Exemplo | Descricao |
+|-----------|---------|-----------|
+| `VITE_API_URL` | `https://api.seudominio.gov.br` | URL **publica** onde a API estara acessivel (sem barra no final). |
+
+### MinIO e N8N
+
+Nao sao obrigatorios nesta fase. Quando houver upload de arquivos para RAW, o MinIO podera guardar os originais e o N8N pode orquestrar fluxos externos, se fizer sentido para voces.
 
 ## Rodando local com Docker
 

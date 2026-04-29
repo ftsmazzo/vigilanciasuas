@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from .config import settings
@@ -9,6 +10,22 @@ from .routers.users import router as users_router
 from .security import hash_password
 
 app = FastAPI(title="VigSocial API", version="0.1.0")
+
+
+def _cors_allow_origins() -> list[str]:
+    raw = settings.cors_origins.strip()
+    if raw == "*":
+        return ["*"]
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_allow_origins(),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def bootstrap_superadmin() -> None:
