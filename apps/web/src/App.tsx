@@ -53,6 +53,11 @@ export default function App() {
   const [uploadPbfStatus, setUploadPbfStatus] = useState("");
   const [uploadPbfProgress, setUploadPbfProgress] = useState(0);
   const [uploadingPbf, setUploadingPbf] = useState(false);
+  const [uploadBpcFile, setUploadBpcFile] = useState<File | null>(null);
+  const [uploadBpcStrategy, setUploadBpcStrategy] = useState("replace");
+  const [uploadBpcStatus, setUploadBpcStatus] = useState("");
+  const [uploadBpcProgress, setUploadBpcProgress] = useState(0);
+  const [uploadingBpc, setUploadingBpc] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/health`)
@@ -275,6 +280,62 @@ export default function App() {
     xhr.send(formData);
   }
 
+  async function handleUploadBpc(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUploadBpcStatus("");
+    setUploadBpcProgress(0);
+
+    if (!uploadBpcFile) {
+      setUploadBpcStatus("Selecione um arquivo CSV ou XLSX.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", uploadBpcFile);
+    formData.append("source", "bpc");
+    formData.append("dataset", "beneficio_prestacao_continuada");
+    formData.append("strategy", uploadBpcStrategy);
+    formData.append("csv_delimiter", ";");
+
+    setUploadingBpc(true);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/api/v1/ingestion/import`);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+    xhr.upload.onprogress = (progressEvent) => {
+      if (!progressEvent.lengthComputable) {
+        return;
+      }
+      const percentage = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+      setUploadBpcProgress(percentage);
+    };
+
+    xhr.onload = () => {
+      setUploadingBpc(false);
+      try {
+        const responseBody = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setUploadBpcProgress(100);
+          setUploadBpcStatus(
+            `Dados inseridos com sucesso. Total de ${responseBody.row_count} registros na base BPC.`
+          );
+          setUploadBpcFile(null);
+          return;
+        }
+        setUploadBpcStatus(responseBody.detail || "Falha na ingestão. Confirme formato, dados e sessão.");
+      } catch {
+        setUploadBpcStatus("Falha na ingestão. Tente novamente.");
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploadingBpc(false);
+      setUploadBpcStatus("Erro de rede durante a ingestão.");
+    };
+
+    xhr.send(formData);
+  }
+
   return (
     <main className="page">
       <header className="hero">
@@ -409,6 +470,45 @@ export default function App() {
             <small>{uploadingPbf ? `Enviando arquivo: ${uploadPbfProgress}%` : "Aguardando envio"}</small>
           </div>
           {uploadPbfStatus && <p>{uploadPbfStatus}</p>}
+        </section>
+      )}
+
+      {token && (
+        <section className="auth-card">
+          <h2>BPC - Benefício de Prestação Continuada (RAW)</h2>
+          <form onSubmit={handleUploadBpc} className="auth-form">
+            <label>
+              Estratégia
+              <select
+                value={uploadBpcStrategy}
+                onChange={(event) => setUploadBpcStrategy(event.target.value)}
+                disabled={uploadingBpc}
+              >
+                <option value="replace">replace (substituir tabela)</option>
+                <option value="append">append (agregar linhas)</option>
+              </select>
+            </label>
+            <label>
+              Arquivo (CSV/XLSX)
+              <input
+                type="file"
+                accept=".csv,.xlsx"
+                onChange={(event) => setUploadBpcFile(event.target.files?.[0] || null)}
+                disabled={uploadingBpc}
+                required
+              />
+            </label>
+            <button type="submit" disabled={uploadingBpc}>
+              {uploadingBpc ? "Processando..." : "Processar BPC para RAW"}
+            </button>
+          </form>
+          <div className="progress-wrap" aria-live="polite">
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: `${uploadBpcProgress}%` }} />
+            </div>
+            <small>{uploadingBpc ? `Enviando arquivo: ${uploadBpcProgress}%` : "Aguardando envio"}</small>
+          </div>
+          {uploadBpcStatus && <p>{uploadBpcStatus}</p>}
         </section>
       )}
 
