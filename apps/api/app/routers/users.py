@@ -16,6 +16,15 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@router.get("", response_model=list[UserOut])
+def list_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_superadmin),
+):
+    users = db.scalars(select(User).order_by(User.id.desc())).all()
+    return users
+
+
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreateRequest,

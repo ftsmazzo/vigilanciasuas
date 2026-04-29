@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     # Origens CORS permitidas, separadas por vírgula. Use "*" só em desenvolvimento.
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    upload_dir: str = "/tmp/vigsocial-uploads"
 
 
 settings = Settings()

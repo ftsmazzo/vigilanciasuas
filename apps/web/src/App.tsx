@@ -1,13 +1,51 @@
 import { useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const TOKEN_KEY = "vigsocial_token";
 
 type HealthResponse = {
   status: string;
 };
 
+type LoginResponse = {
+  access_token: string;
+  role: string;
+  name: string;
+};
+
+type UserMe = {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+};
+
+type NewUserPayload = {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+};
+
 export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [token, setToken] = useState<string>(localStorage.getItem(TOKEN_KEY) || "");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [me, setMe] = useState<UserMe | null>(null);
+  const [loadingMe, setLoadingMe] = useState(false);
+  const [users, setUsers] = useState<UserMe[]>([]);
+  const [userError, setUserError] = useState("");
+  const [newUser, setNewUser] = useState<NewUserPayload>({
+    name: "",
+    email: "",
+    password: "",
+    role: "tecnico",
+  });
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadSource, setUploadSource] = useState("manual");
+  const [uploadStatus, setUploadStatus] = useState("");
 
   useEffect(() => {
     fetch(`${API_URL}/health`)
@@ -16,12 +54,187 @@ export default function App() {
       .catch(() => setHealth(null));
   }, []);
 
+  useEffect(() => {
+    if (!token) {
+      setMe(null);
+      return;
+    }
+
+    setLoadingMe(true);
+    fetch(`${API_URL}/api/v1/users/me`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error("Falha ao buscar usuário");
+        }
+        return res.json();
+      })
+      .then((data: UserMe) => setMe(data))
+      .catch(() => {
+        localStorage.removeItem(TOKEN_KEY);
+        setToken("");
+        setAuthError("Sessão inválida. Faça login novamente.");
+      })
+      .finally(() => setLoadingMe(false));
+  }, [token]);
+
+  useEffect(() => {
+    if (!token || me?.role !== "superadmin") {
+      setUsers([]);
+      return;
+    }
+
+    fetch(`${API_URL}/api/v1/users`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Falha ao listar usuários");
+        return res.json();
+      })
+      .then((data: UserMe[]) => setUsers(data))
+      .catch(() => setUserError("Não foi possível carregar usuários."));
+  }, [token, me?.role]);
+
+  async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError("");
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Credenciais inválidas");
+      }
+
+      const data: LoginResponse = await response.json();
+      localStorage.setItem(TOKEN_KEY, data.access_token);
+      setToken(data.access_token);
+      setPassword("");
+    } catch {
+      setAuthError("Login inválido. Verifique email e senha.");
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken("");
+    setMe(null);
+  }
+
+  async function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUserError("");
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(newUser),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao criar usuário");
+      }
+
+      const created: UserMe = await response.json();
+      setUsers((prev) => [created, ...prev]);
+      setNewUser({ name: "", email: "", password: "", role: "tecnico" });
+    } catch {
+      setUserError("Falha ao criar usuário. Verifique os dados.");
+    }
+  }
+
+  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUploadStatus("");
+
+    if (!uploadFile) {
+      setUploadStatus("Selecione um arquivo CSV ou XLSX.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", uploadFile);
+    formData.append("source", uploadSource);
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/ingestion/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro no upload");
+      }
+
+      const data = await response.json();
+      setUploadStatus(`Upload concluído: ${data.original_filename} (${data.size_bytes} bytes)`);
+      setUploadFile(null);
+    } catch {
+      setUploadStatus("Falha no upload. Confirme formato e sessão.");
+    }
+  }
+
   return (
     <main className="page">
       <header className="hero">
         <h1>VigSocial</h1>
         <p>Painel inicial da Vigilância Socioassistencial</p>
       </header>
+
+      {!token ? (
+        <section className="auth-card">
+          <h2>Entrar</h2>
+          <form onSubmit={handleLogin} className="auth-form">
+            <label>
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Senha
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </label>
+            <button type="submit">Entrar</button>
+          </form>
+          {authError && <p className="error">{authError}</p>}
+        </section>
+      ) : (
+        <section className="session-bar">
+          <div>
+            {loadingMe ? "Carregando sessão..." : `Logado como ${me?.name} (${me?.role})`}
+          </div>
+          <button type="button" onClick={handleLogout}>
+            Sair
+          </button>
+        </section>
+      )}
 
       <section className="cards">
         <article className="card">
@@ -37,6 +250,92 @@ export default function App() {
           <p>{health?.status === "ok" ? "Online" : "Aguardando conexão"}</p>
         </article>
       </section>
+
+      {token && (
+        <section className="auth-card">
+          <h2>Upload de Dados RAW</h2>
+          <form onSubmit={handleUpload} className="auth-form">
+            <label>
+              Fonte
+              <input
+                type="text"
+                value={uploadSource}
+                onChange={(event) => setUploadSource(event.target.value)}
+                placeholder="ex: CECAD"
+              />
+            </label>
+            <label>
+              Arquivo (CSV/XLSX)
+              <input
+                type="file"
+                accept=".csv,.xlsx"
+                onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+                required
+              />
+            </label>
+            <button type="submit">Enviar para RAW</button>
+          </form>
+          {uploadStatus && <p>{uploadStatus}</p>}
+        </section>
+      )}
+
+      {me?.role === "superadmin" && (
+        <section className="auth-card">
+          <h2>Gestão de Usuários</h2>
+          <form onSubmit={handleCreateUser} className="auth-form">
+            <label>
+              Nome
+              <input
+                type="text"
+                value={newUser.name}
+                onChange={(event) => setNewUser((prev) => ({ ...prev, name: event.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Email
+              <input
+                type="email"
+                value={newUser.email}
+                onChange={(event) => setNewUser((prev) => ({ ...prev, email: event.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Senha
+              <input
+                type="password"
+                value={newUser.password}
+                onChange={(event) => setNewUser((prev) => ({ ...prev, password: event.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Perfil
+              <select
+                value={newUser.role}
+                onChange={(event) => setNewUser((prev) => ({ ...prev, role: event.target.value }))}
+              >
+                <option value="gestor">Gestor</option>
+                <option value="admin_local">Admin Local</option>
+                <option value="tecnico">Técnico</option>
+                <option value="consultivo">Consultivo</option>
+              </select>
+            </label>
+            <button type="submit">Criar usuário</button>
+          </form>
+          {userError && <p className="error">{userError}</p>}
+          <div className="users-list">
+            {users.map((user) => (
+              <div className="user-row" key={user.id}>
+                <strong>{user.name}</strong>
+                <span>{user.email}</span>
+                <span>{user.role}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 }
