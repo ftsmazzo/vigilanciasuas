@@ -8,6 +8,7 @@ from .models import User, UserRole
 from .routers.auth import router as auth_router
 from .routers.ingestion import router as ingestion_router
 from .routers.users import router as users_router
+from .routers.vigilance import router as vigilance_router
 from .security import hash_password
 
 app = FastAPI(title="VigSocial API", version="0.1.0")
@@ -62,3 +63,4 @@ def health():
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(users_router, prefix="/api/v1")
 app.include_router(ingestion_router, prefix="/api/v1")
+app.include_router(vigilance_router, prefix="/api/v1")

@@ -1,6 +1,7 @@
 import { useEffect, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import IngestaoPage from "./pages/IngestaoPage";
+import VigilanciaPage from "./pages/VigilanciaPage";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "vigsocial_token";
@@ -61,6 +62,9 @@ function AppShell({
             <NavLink to="/ingestao" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
               Ingestão de dados
             </NavLink>
+            <NavLink to="/vigilancia" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+              Dados vigilância
+            </NavLink>
           </nav>
           <button type="button" onClick={onLogout}>
             Sair
@@ -102,6 +106,13 @@ function DashboardHome({
           <p>Envio de CSV/XLSX para tabelas RAW (CADU, Bolsa Família, BPC, SIBEC).</p>
           <NavLink to="/ingestao" className="card-cta">
             Abrir página de ingestão →
+          </NavLink>
+        </article>
+        <article className="card card-link">
+          <h3>Dados vigilância</h3>
+          <p>Gerar views materializadas (ex.: base Família) após carregar os brutos.</p>
+          <NavLink to="/vigilancia" className="card-cta">
+            Abrir geração de visões →
           </NavLink>
         </article>
         <article className="card">
@@ -365,6 +376,18 @@ export default function App() {
               token ? (
                 <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
                   <IngestaoPage token={token} />
+                </AppShell>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/vigilancia"
+            element={
+              token ? (
+                <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
+                  <VigilanciaPage token={token} />
                 </AppShell>
               ) : (
                 <Navigate to="/" replace />

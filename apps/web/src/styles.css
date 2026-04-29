@@ -32,7 +32,7 @@ body {
 .cards {
   margin-top: 1.5rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
   align-items: stretch;
 }
@@ -517,6 +517,26 @@ button:disabled {
   background: #f1f5f9;
   padding: 0.12rem 0.4rem;
   border-radius: 4px;
+}
+
+.vig-actions {
+  margin-top: 0.5rem;
+}
+
+.vig-result .inline-code,
+.ingestao-panel .inline-code {
+  font-size: 0.85em;
+  background: #f1f5f9;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.vig-warnings {
+  margin: 0.65rem 0 0;
+  padding-left: 1.15rem;
+  color: #92400e;
+  font-size: 0.88rem;
+  line-height: 1.4;
 }
 
 @media (max-width: 900px) {
