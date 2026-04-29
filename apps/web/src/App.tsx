@@ -45,6 +45,8 @@ export default function App() {
   });
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadSource, setUploadSource] = useState("manual");
+  const [uploadDataset, setUploadDataset] = useState("cadu");
+  const [uploadStrategy, setUploadStrategy] = useState("replace");
   const [uploadStatus, setUploadStatus] = useState("");
 
   useEffect(() => {
@@ -170,9 +172,12 @@ export default function App() {
     const formData = new FormData();
     formData.append("file", uploadFile);
     formData.append("source", uploadSource);
+    formData.append("dataset", uploadDataset);
+    formData.append("strategy", uploadStrategy);
+    formData.append("csv_delimiter", ";");
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/ingestion/upload`, {
+      const response = await fetch(`${API_URL}/api/v1/ingestion/import`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -185,10 +190,12 @@ export default function App() {
       }
 
       const data = await response.json();
-      setUploadStatus(`Upload concluído: ${data.original_filename} (${data.size_bytes} bytes)`);
+      setUploadStatus(
+        `Ingestão concluída em raw.${data.target_table} | linhas: ${data.row_count} | estratégia: ${data.strategy}`
+      );
       setUploadFile(null);
     } catch {
-      setUploadStatus("Falha no upload. Confirme formato e sessão.");
+      setUploadStatus("Falha na ingestão. Confirme formato, dados e sessão.");
     }
   }
 
@@ -265,6 +272,26 @@ export default function App() {
               />
             </label>
             <label>
+              Dataset
+              <input
+                type="text"
+                value={uploadDataset}
+                onChange={(event) => setUploadDataset(event.target.value)}
+                placeholder="ex: cadu"
+                required
+              />
+            </label>
+            <label>
+              Estratégia
+              <select
+                value={uploadStrategy}
+                onChange={(event) => setUploadStrategy(event.target.value)}
+              >
+                <option value="replace">replace (substituir tabela)</option>
+                <option value="append">append (agregar linhas)</option>
+              </select>
+            </label>
+            <label>
               Arquivo (CSV/XLSX)
               <input
                 type="file"
@@ -273,7 +300,7 @@ export default function App() {
                 required
               />
             </label>
-            <button type="submit">Enviar para RAW</button>
+            <button type="submit">Processar para RAW</button>
           </form>
           {uploadStatus && <p>{uploadStatus}</p>}
         </section>

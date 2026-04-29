@@ -55,7 +55,6 @@ Configure **Build Path** como `/` (raiz) e aponte o Dockerfile de cada servico:
 | `JWT_ALGORITHM` | Nao | Padrao: `HS256` |
 | `JWT_EXPIRE_MINUTES` | Nao | Padrao: `60` |
 | `REDIS_URL` | Nao por enquanto | Ex.: `redis://host-interno:6379/0` (reservado para filas de ingestao). |
-| `UPLOAD_DIR` | Nao | Pasta local do container para armazenamento inicial dos arquivos enviados. Padrao: `/tmp/vigsocial-uploads`. |
 | `BOOTSTRAP_SUPERADMIN_EMAIL` | Primeiro deploy | Email do primeiro SuperAdmin. |
 | `BOOTSTRAP_SUPERADMIN_PASSWORD` | Primeiro deploy | Senha inicial (troque apos o primeiro login se desejar). |
 | `BOOTSTRAP_SUPERADMIN_NAME` | Nao | Nome exibido; padrao: `Super Admin`. |
@@ -91,7 +90,8 @@ Nao sao obrigatorios nesta fase. Quando houver upload de arquivos para RAW, o Mi
 - `GET /api/v1/users/me`
 - `GET /api/v1/users` (apenas `superadmin`)
 - `POST /api/v1/users` (apenas `superadmin`)
-- `POST /api/v1/ingestion/upload` (autenticado, aceita CSV/XLSX)
+- `POST /api/v1/ingestion/import` (autenticado, cria/popula tabela `raw` com estratégia `replace|append`)
+- `GET /api/v1/ingestion/runs` (histórico das últimas ingestões)
 
 ## Proximos passos
 
