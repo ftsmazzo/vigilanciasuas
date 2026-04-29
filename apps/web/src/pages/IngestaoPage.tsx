@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -78,6 +78,24 @@ function formatRunDate(iso: string | null | undefined): string {
   return d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+/** Uma linha por tabela RAW: mantém só a execução mais recente de cada `target_table`. */
+function latestRunPerBase(runs: IngestionRunRow[]): IngestionRunRow[] {
+  const sorted = [...runs].sort((a, b) => {
+    const ta = new Date(a.finished_at ?? a.created_at).getTime();
+    const tb = new Date(b.finished_at ?? b.created_at).getTime();
+    return tb - ta;
+  });
+  const seen = new Set<string>();
+  const out: IngestionRunRow[] = [];
+  for (const run of sorted) {
+    const key = run.target_table;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(run);
+  }
+  return out.sort((a, b) => a.target_table.localeCompare(b.target_table, "pt-BR"));
+}
+
 export default function IngestaoPage({ token }: Props) {
   const [tab, setTab] = useState<TabId>("cadu");
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
@@ -107,6 +125,8 @@ export default function IngestaoPage({ token }: Props) {
   useEffect(() => {
     loadRuns();
   }, [loadRuns]);
+
+  const runsByBase = useMemo(() => latestRunPerBase(runs), [runs]);
 
   // CADU
   const [caduFile, setCaduFile] = useState<File | null>(null);
@@ -461,7 +481,12 @@ export default function IngestaoPage({ token }: Props) {
 
       <section className="ingestao-history" aria-labelledby="ingestao-history-title">
         <div className="ingestao-history-head">
-          <h2 id="ingestao-history-title">Histórico recente de ingestões</h2>
+          <div>
+            <h2 id="ingestao-history-title">Última ingestão por base</h2>
+            <p className="ingestao-history-sub">
+              Uma linha por tabela RAW (ex.: todas as cargas SIBEC manutenções aparecem como a execução mais recente em <code>raw.sibec__manutencoes</code>).
+            </p>
+          </div>
           <button type="button" onClick={() => loadRuns()} disabled={runsLoading}>
             {runsLoading ? "Atualizando…" : "Atualizar lista"}
           </button>
@@ -472,12 +497,12 @@ export default function IngestaoPage({ token }: Props) {
             Nenhuma execução registrada ainda.
           </p>
         )}
-        {runs.length > 0 && (
+        {!runsError && runsByBase.length > 0 && (
           <div className="runs-table-wrap">
             <table className="runs-table">
               <thead>
                 <tr>
-                  <th>Data</th>
+                  <th>Última execução</th>
                   <th>Fonte</th>
                   <th>Dataset</th>
                   <th>Tabela RAW</th>
@@ -489,7 +514,7 @@ export default function IngestaoPage({ token }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {runs.map((run) => (
+                {runsByBase.map((run) => (
                   <tr key={run.id}>
                     <td>{formatRunDate(run.finished_at || run.created_at)}</td>
                     <td>{run.source}</td>
