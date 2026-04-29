@@ -185,14 +185,18 @@ export default function IngestaoPage({ token }: Props) {
 
   // Bolsa Família
   const [pbfFile, setPbfFile] = useState<File | null>(null);
-  const [pbfStrategy, setPbfStrategy] = useState("replace");
+  const [pbfStrategy, setPbfStrategy] = useState("append");
+  const [pbfCompetencia, setPbfCompetencia] = useState("");
+  const [pbfOverwrite, setPbfOverwrite] = useState(false);
   const [pbfStatus, setPbfStatus] = useState("");
   const [pbfProgress, setPbfProgress] = useState(0);
   const [pbfUploading, setPbfUploading] = useState(false);
 
   // BPC
   const [bpcFile, setBpcFile] = useState<File | null>(null);
-  const [bpcStrategy, setBpcStrategy] = useState("replace");
+  const [bpcStrategy, setBpcStrategy] = useState("append");
+  const [bpcCompetencia, setBpcCompetencia] = useState("");
+  const [bpcOverwrite, setBpcOverwrite] = useState(false);
   const [bpcStatus, setBpcStatus] = useState("");
   const [bpcProgress, setBpcProgress] = useState(0);
   const [bpcUploading, setBpcUploading] = useState(false);
@@ -241,18 +245,26 @@ export default function IngestaoPage({ token }: Props) {
       setPbfStatus("Selecione um arquivo CSV ou XLSX.");
       return;
     }
+    if (!/^\d{6}$/.test(pbfCompetencia)) {
+      setPbfStatus("Informe a competência no formato AAAAMM (mês de referência da folha). Ex.: 202504");
+      return;
+    }
     const fd = new FormData();
     fd.append("file", pbfFile);
     fd.append("source", "sibec");
     fd.append("dataset", "programa_bolsa_familia");
     fd.append("strategy", pbfStrategy);
     fd.append("csv_delimiter", ";");
+    fd.append("competencia", pbfCompetencia);
+    fd.append("overwrite_competencia", pbfOverwrite ? "true" : "false");
     setPbfUploading(true);
     const res = await runIngestionUpload(fd, token, setPbfProgress);
     setPbfUploading(false);
     if (res.ok) {
       setPbfProgress(100);
-      setPbfStatus(`Dados inseridos com sucesso. Total de ${res.data.row_count} registros na base Bolsa Família.`);
+      setPbfStatus(
+        `Dados inseridos com sucesso. Competência ${String(res.data.competencia)}. Total de ${res.data.row_count} registros na base Bolsa Família.`
+      );
       setPbfFile(null);
       await loadRuns();
     } else {
@@ -268,18 +280,26 @@ export default function IngestaoPage({ token }: Props) {
       setBpcStatus("Selecione um arquivo CSV ou XLSX.");
       return;
     }
+    if (!/^\d{6}$/.test(bpcCompetencia)) {
+      setBpcStatus("Informe a competência no formato AAAAMM (mês de referência da carga). Ex.: 202504");
+      return;
+    }
     const fd = new FormData();
     fd.append("file", bpcFile);
     fd.append("source", "bpc");
     fd.append("dataset", "beneficio_prestacao_continuada");
     fd.append("strategy", bpcStrategy);
     fd.append("csv_delimiter", ";");
+    fd.append("competencia", bpcCompetencia);
+    fd.append("overwrite_competencia", bpcOverwrite ? "true" : "false");
     setBpcUploading(true);
     const res = await runIngestionUpload(fd, token, setBpcProgress);
     setBpcUploading(false);
     if (res.ok) {
       setBpcProgress(100);
-      setBpcStatus(`Dados inseridos com sucesso. Total de ${res.data.row_count} registros na base BPC.`);
+      setBpcStatus(
+        `Dados inseridos com sucesso. Competência ${String(res.data.competencia)}. Total de ${res.data.row_count} registros na base BPC.`
+      );
       setBpcFile(null);
       await loadRuns();
     } else {
@@ -395,14 +415,38 @@ export default function IngestaoPage({ token }: Props) {
           {tab === "pbf" && (
             <section className="ingestao-panel">
               <h1>Programa Bolsa Família</h1>
-              <p className="ingestao-desc">Base do Programa Bolsa Família (SIBEC).</p>
+              <p className="ingestao-desc">
+                Folha de pagamento: informe a competência (AAAAMM) do mês de referência do pagamento. A coluna{" "}
+                <strong>competencia</strong> é gravada na RAW para cruzar na visão Família (último mês carregado).
+              </p>
               <form onSubmit={submitPbf} className="auth-form">
+                <label>
+                  Competência (AAAAMM)
+                  <input
+                    type="text"
+                    value={pbfCompetencia}
+                    onChange={(ev) => setPbfCompetencia(ev.target.value)}
+                    placeholder="202504"
+                    maxLength={6}
+                    disabled={pbfUploading}
+                    required
+                  />
+                </label>
                 <label>
                   Estratégia
                   <select value={pbfStrategy} onChange={(ev) => setPbfStrategy(ev.target.value)} disabled={pbfUploading}>
                     <option value="replace">Substituir tabela inteira</option>
-                    <option value="append">Agregar linhas</option>
+                    <option value="append">Agregar linhas (recomendado)</option>
                   </select>
+                </label>
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={pbfOverwrite}
+                    onChange={(ev) => setPbfOverwrite(ev.target.checked)}
+                    disabled={pbfUploading}
+                  />
+                  Sobrescrever esta competência se já existir
                 </label>
                 <label>
                   Arquivo (CSV ou XLSX)
@@ -431,14 +475,38 @@ export default function IngestaoPage({ token }: Props) {
           {tab === "bpc" && (
             <section className="ingestao-panel">
               <h1>BPC — Benefício de Prestação Continuada</h1>
-              <p className="ingestao-desc">Base do Benefício de Prestação Continuada (BPC).</p>
+              <p className="ingestao-desc">
+                Carga por competência (AAAAMM), como na folha Bolsa Família e nas manutenções SIBEC: o mês de
+                referência fica na coluna <strong>competencia</strong> na tabela RAW.
+              </p>
               <form onSubmit={submitBpc} className="auth-form">
+                <label>
+                  Competência (AAAAMM)
+                  <input
+                    type="text"
+                    value={bpcCompetencia}
+                    onChange={(ev) => setBpcCompetencia(ev.target.value)}
+                    placeholder="202504"
+                    maxLength={6}
+                    disabled={bpcUploading}
+                    required
+                  />
+                </label>
                 <label>
                   Estratégia
                   <select value={bpcStrategy} onChange={(ev) => setBpcStrategy(ev.target.value)} disabled={bpcUploading}>
                     <option value="replace">Substituir tabela inteira</option>
-                    <option value="append">Agregar linhas</option>
+                    <option value="append">Agregar linhas (recomendado)</option>
                   </select>
+                </label>
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={bpcOverwrite}
+                    onChange={(ev) => setBpcOverwrite(ev.target.checked)}
+                    disabled={bpcUploading}
+                  />
+                  Sobrescrever esta competência se já existir
                 </label>
                 <label>
                   Arquivo (CSV ou XLSX)

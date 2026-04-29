@@ -106,10 +106,11 @@ export default function VigilanciaPage({ token }: Props) {
           <section className="ingestao-panel">
             <h1>Visão materializada — Família</h1>
             <p className="ingestao-desc">
-              Uma linha por código familiar (sem nomes de pessoas). A folha de pagamento só traz famílias que
-              recebem benefício; o valor vem da coluna <strong>vlrtotal</strong> (soma por família na competência mais
-              recente detectada). <strong>marc_pbf</strong> é <em>true</em> se a família aparece na folha. O indicador
-              textual do CADU fica em <strong>marc_pbf_cadu</strong>. Tabela: <strong>vig.mvw_familia</strong>.
+              Uma linha por código familiar (sem nomes de pessoas).               A folha de pagamento só traz famílias que recebem benefício; o valor vem da coluna <strong>vlrtotal</strong>{" "}
+              (soma por família). Use a ingestão com <strong>competência AAAAMM</strong>: a visão usa o mês mais recente
+              gravado em <code className="inline-code">competencia</code> na RAW. <strong>marc_pbf</strong> é{" "}
+              <em>true</em> se a família aparece nesse recorte. O indicador do CADU fica em <strong>marc_pbf_cadu</strong>.
+              Tabela: <strong>vig.mvw_familia</strong>.
             </p>
 
             <div className="vig-actions">

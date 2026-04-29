@@ -20,6 +20,11 @@ ALLOWED_EXTENSIONS = {".csv", ".xlsx"}
 ALLOWED_STRATEGIES = {"replace", "append"}
 COMPETENCIA_PATTERN = re.compile(r"^\d{6}$")
 
+# Cargas mensais / por competência (mesmo fluxo: competência obrigatória + coluna competencia na RAW).
+DATASETS_REQUIRING_COMPETENCIA = frozenset(
+    {"manutencoes", "programa_bolsa_familia", "beneficio_prestacao_continuada"}
+)
+
 
 def _normalize_identifier(value: str) -> str:
     normalized = value.strip().lower()
@@ -120,6 +125,16 @@ async def import_raw_table(
         )
     if strategy not in ALLOWED_STRATEGIES:
         raise HTTPException(status_code=400, detail="Estratégia inválida. Use replace ou append.")
+
+    normalized_source = _normalize_identifier(source)
+    normalized_dataset = _normalize_identifier(dataset)
+    if normalized_dataset in DATASETS_REQUIRING_COMPETENCIA:
+        if not (competencia and competencia.strip()):
+            raise HTTPException(
+                status_code=400,
+                detail="Informe a competência (AAAAMM) desta carga — mês de referência do pagamento / folha.",
+            )
+
     if competencia:
         competencia = competencia.strip()
         if not COMPETENCIA_PATTERN.match(competencia):
@@ -133,8 +148,6 @@ async def import_raw_table(
     else:
         headers, rows = _parse_xlsx(content)
 
-    normalized_source = _normalize_identifier(source)
-    normalized_dataset = _normalize_identifier(dataset)
     target_table = f"{normalized_source}__{normalized_dataset}"
 
     normalized_map: dict[str, str] = {}

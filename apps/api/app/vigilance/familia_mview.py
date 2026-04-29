@@ -16,9 +16,9 @@ CADU_TABLE = "cecad__cadu"
 PBF_TABLE = "sibec__programa_bolsa_familia"
 
 PBF_COD_CANDIDATES = (
+    "cod_familiar",
     "cod_familiar_fam",
     "d_cod_familiar_fam",
-    "cod_familiar",
     "codigo_familiar",
     "cod_familiar_familia",
 )
@@ -39,9 +39,11 @@ PBF_VALOR_CANDIDATES = (
 )
 
 PBF_REF_CANDIDATES = (
+    "competencia",
     "ref_folha",
     "ref_pbf",
-    "competencia",
+    "inicio_vig_beneficio",
+    "inicio_vig",
     "ref_competencia",
     "ano_mes_referencia",
 )
@@ -450,8 +452,8 @@ def refresh_familia_mview(conn: Connection) -> FamiliaRefreshResult:
             )
         if not pbf_ref:
             warnings.append(
-                "Folha Bolsa Família: sem coluna de referência (competência/folha). "
-                "Somando todas as linhas da tabela (pode duplicar meses)."
+                "Folha Bolsa Família: sem coluna competencia (ingestão por AAAAMM) nem outra referência de mês. "
+                "Somando todas as linhas da tabela (pode duplicar meses). Nas próximas cargas use a competência no envio."
             )
     else:
         warnings.append(
