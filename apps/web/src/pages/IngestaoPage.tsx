@@ -78,6 +78,54 @@ function formatRunDate(iso: string | null | undefined): string {
   return d.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+/** Rótulo amigável por tabela alvo (sem expor nomes RAW ao usuário). */
+const TARGET_LABELS: Record<string, string> = {
+  cecad__cadu: "CADU — Cadastro Único",
+  sibec__programa_bolsa_familia: "Programa Bolsa Família",
+  bpc__beneficio_prestacao_continuada: "BPC — Prestação Continuada",
+  sibec__manutencoes: "SIBEC — Manutenções mensais",
+};
+
+function humanBaseTitle(run: IngestionRunRow): string {
+  return TARGET_LABELS[run.target_table] ?? prettySnakeCase(run.dataset);
+}
+
+function prettySnakeCase(s: string): string {
+  return s
+    .split(/_/g)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function formatSourceLabel(source: string): string {
+  const map: Record<string, string> = {
+    cecad: "CECAD",
+    sibec: "SIBEC",
+    bpc: "BPC",
+  };
+  return map[source.toLowerCase()] ?? source.toUpperCase();
+}
+
+function formatStrategyLabel(strategy: string): string {
+  if (strategy === "replace") return "Substituição total";
+  if (strategy === "append") return "Acrescentar dados";
+  return strategy;
+}
+
+function formatStatusLabel(status: string): string {
+  if (status === "success") return "Concluído";
+  if (status === "failed" || status === "error") return "Falhou";
+  if (status === "running" || status === "pending") return "Em andamento";
+  return status;
+}
+
+function runStatusClass(status: string): string {
+  if (status === "success") return "run-card-status--ok";
+  if (status === "failed" || status === "error") return "run-card-status--bad";
+  return "run-card-status--neutral";
+}
+
 /** Uma linha por tabela RAW: mantém só a execução mais recente de cada `target_table`. */
 function latestRunPerBase(runs: IngestionRunRow[]): IngestionRunRow[] {
   const sorted = [...runs].sort((a, b) => {
@@ -286,7 +334,7 @@ export default function IngestaoPage({ token }: Props) {
       <aside className="ingestao-sidebar" aria-label="Fontes de dados">
         <div className="ingestao-sidebar-head">
           <h2>Ingestão RAW</h2>
-          <p className="ingestao-sidebar-sub">Envio de arquivos para tabelas brutas no PostgreSQL</p>
+          <p className="ingestao-sidebar-sub">Envio de arquivos para as bases brutas</p>
         </div>
         <nav className="ingestao-nav">
           {tabs.map((t) => (
@@ -306,234 +354,242 @@ export default function IngestaoPage({ token }: Props) {
         </Link>
       </aside>
 
-      <main className="ingestao-content">
-        {tab === "cadu" && (
-          <section className="ingestao-panel">
-            <h1>CADU — Cadastro Único</h1>
-            <p className="ingestao-desc">Tabela alvo: <code>raw.cecad__cadu</code></p>
-            <form onSubmit={submitCadu} className="auth-form">
-              <label>
-                Estratégia
-                <select value={caduStrategy} onChange={(ev) => setCaduStrategy(ev.target.value)} disabled={caduUploading}>
-                  <option value="replace">Substituir tabela inteira</option>
-                  <option value="append">Agregar linhas</option>
-                </select>
-              </label>
-              <label>
-                Arquivo (CSV ou XLSX)
-                <input
-                  type="file"
-                  accept=".csv,.xlsx"
-                  onChange={(ev) => setCaduFile(ev.target.files?.[0] || null)}
-                  disabled={caduUploading}
-                  required
-                />
-              </label>
-              <button type="submit" disabled={caduUploading}>
-                {caduUploading ? "Processando…" : "Processar CADU"}
-              </button>
-            </form>
-            <div className="progress-wrap" aria-live="polite">
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${caduProgress}%` }} />
+      <div className="ingestao-main-stack">
+        <main className="ingestao-content">
+          {tab === "cadu" && (
+            <section className="ingestao-panel">
+              <h1>CADU — Cadastro Único</h1>
+              <p className="ingestao-desc">Base do Cadastro Único (CECAD).</p>
+              <form onSubmit={submitCadu} className="auth-form">
+                <label>
+                  Estratégia
+                  <select value={caduStrategy} onChange={(ev) => setCaduStrategy(ev.target.value)} disabled={caduUploading}>
+                    <option value="replace">Substituir tabela inteira</option>
+                    <option value="append">Agregar linhas</option>
+                  </select>
+                </label>
+                <label>
+                  Arquivo (CSV ou XLSX)
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx"
+                    onChange={(ev) => setCaduFile(ev.target.files?.[0] || null)}
+                    disabled={caduUploading}
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={caduUploading}>
+                  {caduUploading ? "Processando…" : "Processar CADU"}
+                </button>
+              </form>
+              <div className="progress-wrap" aria-live="polite">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${caduProgress}%` }} />
+                </div>
+                <small>{caduUploading ? `Enviando: ${caduProgress}%` : "Aguardando envio"}</small>
               </div>
-              <small>{caduUploading ? `Enviando: ${caduProgress}%` : "Aguardando envio"}</small>
-            </div>
-            {caduStatus && <p className={caduStatus.includes("sucesso") ? "status-ok" : "error"}>{caduStatus}</p>}
-          </section>
-        )}
+              {caduStatus && <p className={caduStatus.includes("sucesso") ? "status-ok" : "error"}>{caduStatus}</p>}
+            </section>
+          )}
 
-        {tab === "pbf" && (
-          <section className="ingestao-panel">
-            <h1>Programa Bolsa Família</h1>
-            <p className="ingestao-desc">Tabela alvo: <code>raw.sibec__programa_bolsa_familia</code></p>
-            <form onSubmit={submitPbf} className="auth-form">
-              <label>
-                Estratégia
-                <select value={pbfStrategy} onChange={(ev) => setPbfStrategy(ev.target.value)} disabled={pbfUploading}>
-                  <option value="replace">Substituir tabela inteira</option>
-                  <option value="append">Agregar linhas</option>
-                </select>
-              </label>
-              <label>
-                Arquivo (CSV ou XLSX)
-                <input
-                  type="file"
-                  accept=".csv,.xlsx"
-                  onChange={(ev) => setPbfFile(ev.target.files?.[0] || null)}
-                  disabled={pbfUploading}
-                  required
-                />
-              </label>
-              <button type="submit" disabled={pbfUploading}>
-                {pbfUploading ? "Processando…" : "Processar Bolsa Família"}
-              </button>
-            </form>
-            <div className="progress-wrap" aria-live="polite">
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${pbfProgress}%` }} />
+          {tab === "pbf" && (
+            <section className="ingestao-panel">
+              <h1>Programa Bolsa Família</h1>
+              <p className="ingestao-desc">Base do Programa Bolsa Família (SIBEC).</p>
+              <form onSubmit={submitPbf} className="auth-form">
+                <label>
+                  Estratégia
+                  <select value={pbfStrategy} onChange={(ev) => setPbfStrategy(ev.target.value)} disabled={pbfUploading}>
+                    <option value="replace">Substituir tabela inteira</option>
+                    <option value="append">Agregar linhas</option>
+                  </select>
+                </label>
+                <label>
+                  Arquivo (CSV ou XLSX)
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx"
+                    onChange={(ev) => setPbfFile(ev.target.files?.[0] || null)}
+                    disabled={pbfUploading}
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={pbfUploading}>
+                  {pbfUploading ? "Processando…" : "Processar Bolsa Família"}
+                </button>
+              </form>
+              <div className="progress-wrap" aria-live="polite">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${pbfProgress}%` }} />
+                </div>
+                <small>{pbfUploading ? `Enviando: ${pbfProgress}%` : "Aguardando envio"}</small>
               </div>
-              <small>{pbfUploading ? `Enviando: ${pbfProgress}%` : "Aguardando envio"}</small>
-            </div>
-            {pbfStatus && <p className={pbfStatus.includes("sucesso") ? "status-ok" : "error"}>{pbfStatus}</p>}
-          </section>
-        )}
+              {pbfStatus && <p className={pbfStatus.includes("sucesso") ? "status-ok" : "error"}>{pbfStatus}</p>}
+            </section>
+          )}
 
-        {tab === "bpc" && (
-          <section className="ingestao-panel">
-            <h1>BPC — Benefício de Prestação Continuada</h1>
-            <p className="ingestao-desc">Tabela alvo: <code>raw.bpc__beneficio_prestacao_continuada</code></p>
-            <form onSubmit={submitBpc} className="auth-form">
-              <label>
-                Estratégia
-                <select value={bpcStrategy} onChange={(ev) => setBpcStrategy(ev.target.value)} disabled={bpcUploading}>
-                  <option value="replace">Substituir tabela inteira</option>
-                  <option value="append">Agregar linhas</option>
-                </select>
-              </label>
-              <label>
-                Arquivo (CSV ou XLSX)
-                <input
-                  type="file"
-                  accept=".csv,.xlsx"
-                  onChange={(ev) => setBpcFile(ev.target.files?.[0] || null)}
-                  disabled={bpcUploading}
-                  required
-                />
-              </label>
-              <button type="submit" disabled={bpcUploading}>
-                {bpcUploading ? "Processando…" : "Processar BPC"}
-              </button>
-            </form>
-            <div className="progress-wrap" aria-live="polite">
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${bpcProgress}%` }} />
+          {tab === "bpc" && (
+            <section className="ingestao-panel">
+              <h1>BPC — Benefício de Prestação Continuada</h1>
+              <p className="ingestao-desc">Base do Benefício de Prestação Continuada (BPC).</p>
+              <form onSubmit={submitBpc} className="auth-form">
+                <label>
+                  Estratégia
+                  <select value={bpcStrategy} onChange={(ev) => setBpcStrategy(ev.target.value)} disabled={bpcUploading}>
+                    <option value="replace">Substituir tabela inteira</option>
+                    <option value="append">Agregar linhas</option>
+                  </select>
+                </label>
+                <label>
+                  Arquivo (CSV ou XLSX)
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx"
+                    onChange={(ev) => setBpcFile(ev.target.files?.[0] || null)}
+                    disabled={bpcUploading}
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={bpcUploading}>
+                  {bpcUploading ? "Processando…" : "Processar BPC"}
+                </button>
+              </form>
+              <div className="progress-wrap" aria-live="polite">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${bpcProgress}%` }} />
+                </div>
+                <small>{bpcUploading ? `Enviando: ${bpcProgress}%` : "Aguardando envio"}</small>
               </div>
-              <small>{bpcUploading ? `Enviando: ${bpcProgress}%` : "Aguardando envio"}</small>
-            </div>
-            {bpcStatus && <p className={bpcStatus.includes("sucesso") ? "status-ok" : "error"}>{bpcStatus}</p>}
-          </section>
-        )}
+              {bpcStatus && <p className={bpcStatus.includes("sucesso") ? "status-ok" : "error"}>{bpcStatus}</p>}
+            </section>
+          )}
 
-        {tab === "sibec" && (
-          <section className="ingestao-panel">
-            <h1>SIBEC — Manutenções mensais</h1>
-            <p className="ingestao-desc">
-              Tabela alvo: <code>raw.sibec__manutencoes</code> — informe a competência de cada arquivo (carga inicial: 12 meses em <strong>append</strong>; depois, um mês por vez).
-            </p>
-            <form onSubmit={submitSibec} className="auth-form">
-              <label>
-                Competência (AAAAMM)
-                <input
-                  type="text"
-                  value={sibecCompetencia}
-                  onChange={(ev) => setSibecCompetencia(ev.target.value)}
-                  placeholder="202505"
-                  maxLength={6}
-                  disabled={sibecUploading}
-                  required
-                />
-              </label>
-              <label>
-                Estratégia
-                <select
-                  value={sibecStrategy}
-                  onChange={(ev) => setSibecStrategy(ev.target.value)}
-                  disabled={sibecUploading}
-                >
-                  <option value="replace">Substituir tabela inteira</option>
-                  <option value="append">Agregar linhas (recomendado)</option>
-                </select>
-              </label>
-              <label className="checkbox-inline">
-                <input
-                  type="checkbox"
-                  checked={sibecOverwrite}
-                  onChange={(ev) => setSibecOverwrite(ev.target.checked)}
-                  disabled={sibecUploading}
-                />
-                Sobrescrever esta competência se já existir
-              </label>
-              <label>
-                Arquivo (CSV ou XLSX)
-                <input
-                  type="file"
-                  accept=".csv,.xlsx"
-                  onChange={(ev) => setSibecFile(ev.target.files?.[0] || null)}
-                  disabled={sibecUploading}
-                  required
-                />
-              </label>
-              <button type="submit" disabled={sibecUploading}>
-                {sibecUploading ? "Processando…" : "Processar manutenções"}
-              </button>
-            </form>
-            <div className="progress-wrap" aria-live="polite">
-              <div className="progress-track">
-                <div className="progress-fill" style={{ width: `${sibecProgress}%` }} />
+          {tab === "sibec" && (
+            <section className="ingestao-panel">
+              <h1>SIBEC — Manutenções mensais</h1>
+              <p className="ingestao-desc">
+                Manutenções mensais SIBEC: informe a competência (AAAAMM) de cada arquivo. Carga inicial pode ser vários meses em modo <strong>acrescentar</strong>; depois, prefira um mês por vez.
+              </p>
+              <form onSubmit={submitSibec} className="auth-form">
+                <label>
+                  Competência (AAAAMM)
+                  <input
+                    type="text"
+                    value={sibecCompetencia}
+                    onChange={(ev) => setSibecCompetencia(ev.target.value)}
+                    placeholder="202505"
+                    maxLength={6}
+                    disabled={sibecUploading}
+                    required
+                  />
+                </label>
+                <label>
+                  Estratégia
+                  <select
+                    value={sibecStrategy}
+                    onChange={(ev) => setSibecStrategy(ev.target.value)}
+                    disabled={sibecUploading}
+                  >
+                    <option value="replace">Substituir tabela inteira</option>
+                    <option value="append">Agregar linhas (recomendado)</option>
+                  </select>
+                </label>
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    checked={sibecOverwrite}
+                    onChange={(ev) => setSibecOverwrite(ev.target.checked)}
+                    disabled={sibecUploading}
+                  />
+                  Sobrescrever esta competência se já existir
+                </label>
+                <label>
+                  Arquivo (CSV ou XLSX)
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx"
+                    onChange={(ev) => setSibecFile(ev.target.files?.[0] || null)}
+                    disabled={sibecUploading}
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={sibecUploading}>
+                  {sibecUploading ? "Processando…" : "Processar manutenções"}
+                </button>
+              </form>
+              <div className="progress-wrap" aria-live="polite">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${sibecProgress}%` }} />
+                </div>
+                <small>{sibecUploading ? `Enviando: ${sibecProgress}%` : "Aguardando envio"}</small>
               </div>
-              <small>{sibecUploading ? `Enviando: ${sibecProgress}%` : "Aguardando envio"}</small>
-            </div>
-            {sibecStatus && <p className={sibecStatus.includes("sucesso") ? "status-ok" : "error"}>{sibecStatus}</p>}
-          </section>
-        )}
-      </main>
+              {sibecStatus && <p className={sibecStatus.includes("sucesso") ? "status-ok" : "error"}>{sibecStatus}</p>}
+            </section>
+          )}
+        </main>
 
-      <section className="ingestao-history" aria-labelledby="ingestao-history-title">
-        <div className="ingestao-history-head">
-          <div>
-            <h2 id="ingestao-history-title">Última ingestão por base</h2>
-            <p className="ingestao-history-sub">
-              Uma linha por tabela RAW (ex.: todas as cargas SIBEC manutenções aparecem como a execução mais recente em <code>raw.sibec__manutencoes</code>).
-            </p>
+        <section className="ingestao-history" aria-labelledby="ingestao-history-title">
+          <div className="ingestao-history-head">
+            <div>
+              <h2 id="ingestao-history-title">Última ingestão por base</h2>
+              <p className="ingestao-history-sub">
+                Para cada base de dados, só aparece a carga mais recente (várias execuções do mesmo tipo são resumidas num único registro).
+              </p>
+            </div>
+            <button type="button" onClick={() => loadRuns()} disabled={runsLoading}>
+              {runsLoading ? "Atualizando…" : "Atualizar lista"}
+            </button>
           </div>
-          <button type="button" onClick={() => loadRuns()} disabled={runsLoading}>
-            {runsLoading ? "Atualizando…" : "Atualizar lista"}
-          </button>
-        </div>
-        {runsError && <p className="error">{runsError}</p>}
-        {!runsError && runs.length === 0 && !runsLoading && (
-          <p className="ingestao-desc" style={{ margin: 0 }}>
-            Nenhuma execução registrada ainda.
-          </p>
-        )}
-        {!runsError && runsByBase.length > 0 && (
-          <div className="runs-table-wrap">
-            <table className="runs-table">
-              <thead>
-                <tr>
-                  <th>Última execução</th>
-                  <th>Fonte</th>
-                  <th>Dataset</th>
-                  <th>Tabela RAW</th>
-                  <th>Estratégia</th>
-                  <th>Linhas</th>
-                  <th>Status</th>
-                  <th>Arquivo</th>
-                  <th>Usuário</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runsByBase.map((run) => (
-                  <tr key={run.id}>
-                    <td>{formatRunDate(run.finished_at || run.created_at)}</td>
-                    <td>{run.source}</td>
-                    <td>{run.dataset}</td>
-                    <td className="cell-mono">raw.{run.target_table}</td>
-                    <td>{run.strategy}</td>
-                    <td>{run.row_count}</td>
-                    <td className={run.status === "success" ? "cell-ok" : "cell-fail"}>{run.status}</td>
-                    <td className="cell-mono" title={run.file_name}>
-                      {run.file_name.length > 28 ? `${run.file_name.slice(0, 28)}…` : run.file_name}
-                    </td>
-                    <td>{run.created_by_email}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+          {runsError && <p className="error">{runsError}</p>}
+          {!runsError && runs.length === 0 && !runsLoading && (
+            <p className="ingestao-desc" style={{ margin: 0 }}>
+              Nenhuma execução registrada ainda.
+            </p>
+          )}
+          {!runsError && runsByBase.length > 0 && (
+            <ul className="runs-cards" aria-label="Resumo das últimas ingestões">
+              {runsByBase.map((run) => (
+                <li key={run.id} className="run-card">
+                  <div className="run-card-top">
+                    <h3 className="run-card-title">{humanBaseTitle(run)}</h3>
+                    <span
+                      className={`run-card-status ${runStatusClass(run.status)}`}
+                    >
+                      {formatStatusLabel(run.status)}
+                    </span>
+                  </div>
+                  <dl className="run-card-meta">
+                    <div>
+                      <dt>Data e hora</dt>
+                      <dd>{formatRunDate(run.finished_at || run.created_at)}</dd>
+                    </div>
+                    <div>
+                      <dt>Registros</dt>
+                      <dd>{run.row_count.toLocaleString("pt-BR")}</dd>
+                    </div>
+                    <div>
+                      <dt>Origem</dt>
+                      <dd>{formatSourceLabel(run.source)}</dd>
+                    </div>
+                    <div>
+                      <dt>Modo</dt>
+                      <dd>{formatStrategyLabel(run.strategy)}</dd>
+                    </div>
+                    <div className="run-card-meta-file">
+                      <dt>Arquivo</dt>
+                      <dd title={run.file_name}>{run.file_name}</dd>
+                    </div>
+                    <div>
+                      <dt>Enviado por</dt>
+                      <dd className="run-card-email">{run.created_by_email}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
