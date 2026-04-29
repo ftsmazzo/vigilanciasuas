@@ -49,7 +49,7 @@ Configure **Build Path** como `/` (raiz) e aponte o Dockerfile de cada servico:
 
 | Variavel | Obrigatoria | Descricao |
 |----------|-------------|-----------|
-| `DATABASE_URL` | Sim | URL SQLAlchemy/async compativel com `psycopg`. Ex.: `postgresql+psycopg://usuario:senha@host-interno:5432/nome_do_banco` |
+| `DATABASE_URL` | Sim | URL do PostgreSQL. Aceita `postgresql+psycopg://...` **ou** `postgresql://...` (a API normaliza automaticamente para psycopg v3). |
 | `JWT_SECRET_KEY` | Sim | Chave secreta forte (nao reutilize a senha do banco). |
 | `CORS_ORIGINS` | Recomendado | URLs do frontend, separadas por virgula. Ex.: `https://app.seudominio.gov.br`. Em dev local o padrao ja cobre `localhost:3000`. |
 | `JWT_ALGORITHM` | Nao | Padrao: `HS256` |
