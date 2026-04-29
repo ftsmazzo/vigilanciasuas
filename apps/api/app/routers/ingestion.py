@@ -18,6 +18,7 @@ router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
 ALLOWED_EXTENSIONS = {".csv", ".xlsx"}
 ALLOWED_STRATEGIES = {"replace", "append"}
+COMPETENCIA_PATTERN = re.compile(r"^\d{6}$")
 
 
 def _normalize_identifier(value: str) -> str:
@@ -106,6 +107,8 @@ async def import_raw_table(
     dataset: str = Form(...),
     strategy: str = Form("replace"),
     csv_delimiter: str = Form(";"),
+    competencia: str | None = Form(None),
+    overwrite_competencia: bool = Form(False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -117,6 +120,10 @@ async def import_raw_table(
         )
     if strategy not in ALLOWED_STRATEGIES:
         raise HTTPException(status_code=400, detail="Estratégia inválida. Use replace ou append.")
+    if competencia:
+        competencia = competencia.strip()
+        if not COMPETENCIA_PATTERN.match(competencia):
+            raise HTTPException(status_code=400, detail="Competência inválida. Use formato AAAAMM.")
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Arquivo vazio.")
@@ -189,12 +196,45 @@ async def import_raw_table(
                             f"ADD COLUMN {_quoted_identifier(normalized_column)} TEXT"
                         )
                     )
+            if competencia and "competencia" not in existing_columns:
+                connection.execute(
+                    text(
+                        f"ALTER TABLE raw.{_quoted_identifier(target_table)} "
+                        "ADD COLUMN competencia TEXT"
+                    )
+                )
 
             if strategy == "replace":
                 connection.execute(text(f"TRUNCATE TABLE raw.{_quoted_identifier(target_table)}"))
+            elif competencia:
+                existing_for_comp = connection.execute(
+                    text(
+                        f"SELECT COUNT(*) FROM raw.{_quoted_identifier(target_table)} "
+                        "WHERE competencia = :competencia"
+                    ),
+                    {"competencia": competencia},
+                ).scalar_one()
+                if existing_for_comp and not overwrite_competencia:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"Já existe carga para a competência {competencia}. "
+                            "Marque sobrescrever competência para substituir este mês."
+                        ),
+                    )
+                if existing_for_comp and overwrite_competencia:
+                    connection.execute(
+                        text(
+                            f"DELETE FROM raw.{_quoted_identifier(target_table)} "
+                            "WHERE competencia = :competencia"
+                        ),
+                        {"competencia": competencia},
+                    )
 
             if rows:
                 insert_columns = list(normalized_map.values())
+                if competencia:
+                    insert_columns.append("competencia")
                 insert_columns_sql = ", ".join(_quoted_identifier(c) for c in insert_columns)
                 values_sql = ", ".join(f":{c}" for c in insert_columns)
                 insert_stmt = text(
@@ -208,6 +248,8 @@ async def import_raw_table(
                     for original_col, normalized_col in normalized_map.items():
                         value = row.get(original_col)
                         payload[normalized_col] = value if value not in ("", None) else None
+                    if competencia:
+                        payload["competencia"] = competencia
                     payload_rows.append(payload)
 
                 connection.execute(insert_stmt, payload_rows)
@@ -217,6 +259,13 @@ async def import_raw_table(
         run.finished_at = datetime.utcnow()
         db.add(run)
         db.commit()
+    except HTTPException as exc:
+        run.status = "failed"
+        run.error_message = str(exc.detail)[:500]
+        run.finished_at = datetime.utcnow()
+        db.add(run)
+        db.commit()
+        raise
     except Exception as exc:
         run.status = "failed"
         run.error_message = str(exc)[:500]
@@ -231,6 +280,7 @@ async def import_raw_table(
         "target_schema": "raw",
         "target_table": target_table,
         "strategy": strategy,
+        "competencia": competencia,
         "row_count": len(rows),
         "columns_count": len(normalized_map),
     }

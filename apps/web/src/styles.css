@@ -62,6 +62,16 @@ body {
   font-size: 0.95rem;
 }
 
+.auth-form label.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.auth-form label.checkbox-inline input[type="checkbox"] {
+  width: auto;
+}
+
 .auth-form input {
   border: 1px solid #cbd5e1;
   border-radius: 8px;

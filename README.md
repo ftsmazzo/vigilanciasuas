@@ -90,7 +90,7 @@ Nao sao obrigatorios nesta fase. Quando houver upload de arquivos para RAW, o Mi
 - `GET /api/v1/users/me`
 - `GET /api/v1/users` (apenas `superadmin`)
 - `POST /api/v1/users` (apenas `superadmin`)
-- `POST /api/v1/ingestion/import` (autenticado, cria/popula tabela `raw` com estratégia `replace|append`)
+- `POST /api/v1/ingestion/import` (autenticado, cria/popula tabela `raw` com estratégia `replace|append`; aceita `competencia=AAAAMM` e controle de sobrescrita mensal)
 - `GET /api/v1/ingestion/runs` (histórico das últimas ingestões)
 
 ## Proximos passos

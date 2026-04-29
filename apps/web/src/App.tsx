@@ -53,6 +53,8 @@ export default function App() {
   const [uploadPbfStatus, setUploadPbfStatus] = useState("");
   const [uploadPbfProgress, setUploadPbfProgress] = useState(0);
   const [uploadingPbf, setUploadingPbf] = useState(false);
+  const [uploadPbfCompetencia, setUploadPbfCompetencia] = useState("");
+  const [uploadPbfOverwriteCompetencia, setUploadPbfOverwriteCompetencia] = useState(false);
   const [uploadBpcFile, setUploadBpcFile] = useState<File | null>(null);
   const [uploadBpcStrategy, setUploadBpcStrategy] = useState("replace");
   const [uploadBpcStatus, setUploadBpcStatus] = useState("");
@@ -233,13 +235,19 @@ export default function App() {
       setUploadPbfStatus("Selecione um arquivo CSV ou XLSX.");
       return;
     }
+    if (!/^\d{6}$/.test(uploadPbfCompetencia)) {
+      setUploadPbfStatus("Informe a competência no formato AAAAMM. Ex.: 202505");
+      return;
+    }
 
     const formData = new FormData();
     formData.append("file", uploadPbfFile);
     formData.append("source", "sibec");
-    formData.append("dataset", "programa_bolsa_familia");
+    formData.append("dataset", "manutencoes");
     formData.append("strategy", uploadPbfStrategy);
     formData.append("csv_delimiter", ";");
+    formData.append("competencia", uploadPbfCompetencia);
+    formData.append("overwrite_competencia", uploadPbfOverwriteCompetencia ? "true" : "false");
 
     setUploadingPbf(true);
     const xhr = new XMLHttpRequest();
@@ -261,7 +269,7 @@ export default function App() {
         if (xhr.status >= 200 && xhr.status < 300) {
           setUploadPbfProgress(100);
           setUploadPbfStatus(
-            `Dados inseridos com sucesso. Total de ${responseBody.row_count} registros na base Programa Bolsa Familia.`
+            `Dados inseridos com sucesso. Competência ${responseBody.competencia}. Total de ${responseBody.row_count} registros.`
           );
           setUploadPbfFile(null);
           return;
@@ -436,8 +444,20 @@ export default function App() {
 
       {token && (
         <section className="auth-card">
-          <h2>Programa Bolsa Familia (RAW)</h2>
+          <h2>SIBEC - Manutenções Mensais (RAW)</h2>
           <form onSubmit={handleUploadPbf} className="auth-form">
+            <label>
+              Competência (AAAAMM)
+              <input
+                type="text"
+                value={uploadPbfCompetencia}
+                onChange={(event) => setUploadPbfCompetencia(event.target.value)}
+                placeholder="202505"
+                maxLength={6}
+                disabled={uploadingPbf}
+                required
+              />
+            </label>
             <label>
               Estratégia
               <select
@@ -448,6 +468,15 @@ export default function App() {
                 <option value="replace">replace (substituir tabela)</option>
                 <option value="append">append (agregar linhas)</option>
               </select>
+            </label>
+            <label className="checkbox-inline">
+              <input
+                type="checkbox"
+                checked={uploadPbfOverwriteCompetencia}
+                onChange={(event) => setUploadPbfOverwriteCompetencia(event.target.checked)}
+                disabled={uploadingPbf}
+              />
+              Sobrescrever esta competência se já existir
             </label>
             <label>
               Arquivo (CSV/XLSX)
@@ -460,7 +489,7 @@ export default function App() {
               />
             </label>
             <button type="submit" disabled={uploadingPbf}>
-              {uploadingPbf ? "Processando..." : "Processar Bolsa Familia para RAW"}
+              {uploadingPbf ? "Processando..." : "Processar SIBEC Manutenções"}
             </button>
           </form>
           <div className="progress-wrap" aria-live="polite">
