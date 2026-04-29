@@ -134,9 +134,12 @@ def _expr(ref: str, mode: str) -> str:
     if mode == "text":
         return f"vig.clean_spaces({ref}::text)"
     if mode == "cpf":
+        # Exportações suprimem zeros à esquerda: completa até 11 dígitos; >11 dígitos = inválido.
         return f"""CASE
-          WHEN vig.only_digits({ref}::text) IS NULL OR length(vig.only_digits({ref}::text)) < 11 THEN NULL
-          ELSE vig.only_digits({ref}::text)
+          WHEN vig.only_digits({ref}::text) IS NULL
+            OR btrim(vig.only_digits({ref}::text)) = '' THEN NULL
+          WHEN length(vig.only_digits({ref}::text)) > 11 THEN NULL
+          ELSE lpad(vig.only_digits({ref}::text), 11, '0')
         END"""
     raise ValueError(f"modo desconhecido: {mode}")
 

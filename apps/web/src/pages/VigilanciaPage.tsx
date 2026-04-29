@@ -340,7 +340,9 @@ export default function VigilanciaPage({ token }: Props) {
               <h1>Visão materializada — Pessoas</h1>
               <p className="ingestao-desc">
                 <strong>Todas as linhas</strong> de <code className="inline-code">raw.cecad__cadu</code> (uma por membro
-                no arquivo “tudo”), com nomes de campos simplificados e sanitização. <strong>idade</strong> é calculada
+                no arquivo “tudo”), com nomes de campos simplificados e sanitização. O <strong>CPF</strong> (
+                <code className="inline-code">num_cpf</code>) é normalizado só com dígitos e preenchido com zeros à
+                esquerda até 11 posições quando a exportação cortou zeros. <strong>idade</strong> é calculada
                 em anos completos a partir de <code className="inline-code">data_nascimento</code> (parser igual ao das
                 outras views). <strong>cadu_row_id</strong> é o <code className="inline-code">id</code> da linha na RAW.
                 Tabela: <strong>vig.mvw_pessoas</strong>.

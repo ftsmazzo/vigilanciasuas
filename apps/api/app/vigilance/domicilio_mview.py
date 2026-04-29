@@ -59,7 +59,7 @@ def build_domicilio_mview_sql(*, cadu_cols: set[str], has_cpf_col: bool) -> str:
     def q(phys: str) -> str:
         return f"{_col_expr(cadu_cols, phys)}::text"
 
-    # Contagem de CPF distintos por família (11 dígitos após sanitizar).
+    # CPF: mesmo critério da mvw_pessoas (só dígitos, lpad 11 se exportação cortou zeros à esquerda).
     if has_cpf_col:
         cpf_sql = f"""
         cpf_por_familia AS (
@@ -68,8 +68,9 @@ def build_domicilio_mview_sql(*, cadu_cols: set[str], has_cpf_col: bool) -> str:
             COUNT(
               DISTINCT CASE
                 WHEN vig.only_digits({_qi(CPF_PESSOA_COL)}::text) IS NOT NULL
-                  AND length(vig.only_digits({_qi(CPF_PESSOA_COL)}::text)) >= 11
-                THEN vig.only_digits({_qi(CPF_PESSOA_COL)}::text)
+                  AND btrim(vig.only_digits({_qi(CPF_PESSOA_COL)}::text)) <> ''
+                  AND length(vig.only_digits({_qi(CPF_PESSOA_COL)}::text)) <= 11
+                THEN lpad(vig.only_digits({_qi(CPF_PESSOA_COL)}::text), 11, '0')
               END
             )::bigint AS total_pessoas
           FROM raw.{_qi(CADU_TABLE)}
