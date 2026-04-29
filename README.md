@@ -80,6 +80,7 @@ Nao sao obrigatorios nesta fase. Quando houver upload de arquivos para RAW, o Mi
    - `docker compose up --build`
 3. URLs:
    - Frontend: `http://localhost:3000`
+   - Ingestão RAW: `http://localhost:3000/ingestao` (após login)
    - API: `http://localhost:8000`
    - Docs API: `http://localhost:8000/docs`
 

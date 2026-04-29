@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
+import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
+import IngestaoPage from "./pages/IngestaoPage";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const TOKEN_KEY = "vigsocial_token";
@@ -27,6 +29,148 @@ type NewUserPayload = {
   role: string;
 };
 
+function AppShell({
+  token,
+  loadingMe,
+  me,
+  onLogout,
+  children,
+}: {
+  token: string;
+  loadingMe: boolean;
+  me: UserMe | null;
+  onLogout: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <header className="hero">
+        <h1>VigSocial</h1>
+        <p>Painel inicial da Vigilância Socioassistencial</p>
+      </header>
+
+      <section className="session-bar">
+        <div>
+          {loadingMe ? "Carregando sessão…" : `Logado como ${me?.name} (${me?.role})`}
+        </div>
+        <div className="session-actions">
+          <nav className="main-nav" aria-label="Principal">
+            <NavLink to="/" end className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+              Início
+            </NavLink>
+            <NavLink to="/ingestao" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+              Ingestão de dados
+            </NavLink>
+          </nav>
+          <button type="button" onClick={onLogout}>
+            Sair
+          </button>
+        </div>
+      </section>
+
+      {children}
+    </>
+  );
+}
+
+function DashboardHome({
+  health,
+  me,
+  users,
+  userError,
+  newUser,
+  setNewUser,
+  onCreateUser,
+}: {
+  health: HealthResponse | null;
+  me: UserMe | null;
+  users: UserMe[];
+  userError: string;
+  newUser: NewUserPayload;
+  setNewUser: Dispatch<SetStateAction<NewUserPayload>>;
+  onCreateUser: (e: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <>
+      <section className="cards">
+        <article className="card">
+          <h3>Usuários e perfis</h3>
+          <p>SuperAdmin, Gestor, Admin Local, Técnico e Consultivo</p>
+        </article>
+        <article className="card card-link">
+          <h3>Ingestão de dados</h3>
+          <p>Envio de CSV/XLSX para tabelas RAW (CADU, Bolsa Família, BPC, SIBEC).</p>
+          <NavLink to="/ingestao" className="card-cta">
+            Abrir página de ingestão →
+          </NavLink>
+        </article>
+        <article className="card">
+          <h3>Status da API</h3>
+          <p>{health?.status === "ok" ? "Online" : "Aguardando conexão"}</p>
+        </article>
+      </section>
+
+      {me?.role === "superadmin" && (
+        <section className="auth-card">
+          <h2>Gestão de usuários</h2>
+          <form onSubmit={onCreateUser} className="auth-form">
+            <label>
+              Nome
+              <input
+                type="text"
+                value={newUser.name}
+                onChange={(event) => setNewUser((prev) => ({ ...prev, name: event.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Email
+              <input
+                type="email"
+                value={newUser.email}
+                onChange={(event) => setNewUser((prev) => ({ ...prev, email: event.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Senha
+              <input
+                type="password"
+                value={newUser.password}
+                onChange={(event) => setNewUser((prev) => ({ ...prev, password: event.target.value }))}
+                required
+              />
+            </label>
+            <label>
+              Perfil
+              <select
+                value={newUser.role}
+                onChange={(event) => setNewUser((prev) => ({ ...prev, role: event.target.value }))}
+              >
+                <option value="gestor">Gestor</option>
+                <option value="admin_local">Admin Local</option>
+                <option value="tecnico">Técnico</option>
+                <option value="consultivo">Consultivo</option>
+              </select>
+            </label>
+            <button type="submit">Criar usuário</button>
+          </form>
+          {userError && <p className="error">{userError}</p>}
+          <div className="users-list">
+            {users.map((user) => (
+              <div className="user-row" key={user.id}>
+                <strong>{user.name}</strong>
+                <span>{user.email}</span>
+                <span>{user.role}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
 export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [token, setToken] = useState<string>(localStorage.getItem(TOKEN_KEY) || "");
@@ -43,23 +187,6 @@ export default function App() {
     password: "",
     role: "tecnico",
   });
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadStrategy, setUploadStrategy] = useState("replace");
-  const [uploadStatus, setUploadStatus] = useState("");
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploading, setUploading] = useState(false);
-  const [uploadPbfFile, setUploadPbfFile] = useState<File | null>(null);
-  const [uploadPbfStrategy, setUploadPbfStrategy] = useState("replace");
-  const [uploadPbfStatus, setUploadPbfStatus] = useState("");
-  const [uploadPbfProgress, setUploadPbfProgress] = useState(0);
-  const [uploadingPbf, setUploadingPbf] = useState(false);
-  const [uploadPbfCompetencia, setUploadPbfCompetencia] = useState("");
-  const [uploadPbfOverwriteCompetencia, setUploadPbfOverwriteCompetencia] = useState(false);
-  const [uploadBpcFile, setUploadBpcFile] = useState<File | null>(null);
-  const [uploadBpcStrategy, setUploadBpcStrategy] = useState("replace");
-  const [uploadBpcStatus, setUploadBpcStatus] = useState("");
-  const [uploadBpcProgress, setUploadBpcProgress] = useState(0);
-  const [uploadingBpc, setUploadingBpc] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/health`)
@@ -114,7 +241,7 @@ export default function App() {
       .catch(() => setUserError("Não foi possível carregar usuários."));
   }, [token, me?.role]);
 
-  async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthError("");
 
@@ -146,7 +273,7 @@ export default function App() {
     setMe(null);
   }
 
-  async function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
+  async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setUserError("");
 
@@ -172,432 +299,81 @@ export default function App() {
     }
   }
 
-  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setUploadStatus("");
-    setUploadProgress(0);
-
-    if (!uploadFile) {
-      setUploadStatus("Selecione um arquivo CSV ou XLSX.");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", uploadFile);
-    formData.append("source", "cecad");
-    formData.append("dataset", "cadu");
-    formData.append("strategy", uploadStrategy);
-    formData.append("csv_delimiter", ";");
-
-    setUploading(true);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_URL}/api/v1/ingestion/import`);
-    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-    xhr.upload.onprogress = (progressEvent) => {
-      if (!progressEvent.lengthComputable) {
-        return;
-      }
-      const percentage = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-      setUploadProgress(percentage);
-    };
-
-    xhr.onload = () => {
-      setUploading(false);
-      try {
-        const responseBody = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-        if (xhr.status >= 200 && xhr.status < 300) {
-          setUploadProgress(100);
-          setUploadStatus(`Dados inseridos com sucesso. Total de ${responseBody.row_count} registros.`);
-          setUploadFile(null);
-          return;
-        }
-        setUploadStatus(responseBody.detail || "Falha na ingestão. Confirme formato, dados e sessão.");
-      } catch {
-        setUploadStatus("Falha na ingestão. Tente novamente.");
-      }
-    };
-
-    xhr.onerror = () => {
-      setUploading(false);
-      setUploadStatus("Erro de rede durante a ingestão.");
-    };
-
-    xhr.send(formData);
-  }
-
-  async function handleUploadPbf(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setUploadPbfStatus("");
-    setUploadPbfProgress(0);
-
-    if (!uploadPbfFile) {
-      setUploadPbfStatus("Selecione um arquivo CSV ou XLSX.");
-      return;
-    }
-    if (!/^\d{6}$/.test(uploadPbfCompetencia)) {
-      setUploadPbfStatus("Informe a competência no formato AAAAMM. Ex.: 202505");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", uploadPbfFile);
-    formData.append("source", "sibec");
-    formData.append("dataset", "manutencoes");
-    formData.append("strategy", uploadPbfStrategy);
-    formData.append("csv_delimiter", ";");
-    formData.append("competencia", uploadPbfCompetencia);
-    formData.append("overwrite_competencia", uploadPbfOverwriteCompetencia ? "true" : "false");
-
-    setUploadingPbf(true);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_URL}/api/v1/ingestion/import`);
-    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-    xhr.upload.onprogress = (progressEvent) => {
-      if (!progressEvent.lengthComputable) {
-        return;
-      }
-      const percentage = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-      setUploadPbfProgress(percentage);
-    };
-
-    xhr.onload = () => {
-      setUploadingPbf(false);
-      try {
-        const responseBody = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-        if (xhr.status >= 200 && xhr.status < 300) {
-          setUploadPbfProgress(100);
-          setUploadPbfStatus(
-            `Dados inseridos com sucesso. Competência ${responseBody.competencia}. Total de ${responseBody.row_count} registros.`
-          );
-          setUploadPbfFile(null);
-          return;
-        }
-        setUploadPbfStatus(responseBody.detail || "Falha na ingestão. Confirme formato, dados e sessão.");
-      } catch {
-        setUploadPbfStatus("Falha na ingestão. Tente novamente.");
-      }
-    };
-
-    xhr.onerror = () => {
-      setUploadingPbf(false);
-      setUploadPbfStatus("Erro de rede durante a ingestão.");
-    };
-
-    xhr.send(formData);
-  }
-
-  async function handleUploadBpc(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setUploadBpcStatus("");
-    setUploadBpcProgress(0);
-
-    if (!uploadBpcFile) {
-      setUploadBpcStatus("Selecione um arquivo CSV ou XLSX.");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", uploadBpcFile);
-    formData.append("source", "bpc");
-    formData.append("dataset", "beneficio_prestacao_continuada");
-    formData.append("strategy", uploadBpcStrategy);
-    formData.append("csv_delimiter", ";");
-
-    setUploadingBpc(true);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `${API_URL}/api/v1/ingestion/import`);
-    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-    xhr.upload.onprogress = (progressEvent) => {
-      if (!progressEvent.lengthComputable) {
-        return;
-      }
-      const percentage = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-      setUploadBpcProgress(percentage);
-    };
-
-    xhr.onload = () => {
-      setUploadingBpc(false);
-      try {
-        const responseBody = xhr.responseText ? JSON.parse(xhr.responseText) : {};
-        if (xhr.status >= 200 && xhr.status < 300) {
-          setUploadBpcProgress(100);
-          setUploadBpcStatus(
-            `Dados inseridos com sucesso. Total de ${responseBody.row_count} registros na base BPC.`
-          );
-          setUploadBpcFile(null);
-          return;
-        }
-        setUploadBpcStatus(responseBody.detail || "Falha na ingestão. Confirme formato, dados e sessão.");
-      } catch {
-        setUploadBpcStatus("Falha na ingestão. Tente novamente.");
-      }
-    };
-
-    xhr.onerror = () => {
-      setUploadingBpc(false);
-      setUploadBpcStatus("Erro de rede durante a ingestão.");
-    };
-
-    xhr.send(formData);
-  }
-
   return (
-    <main className="page">
-      <header className="hero">
-        <h1>VigSocial</h1>
-        <p>Painel inicial da Vigilância Socioassistencial</p>
-      </header>
-
-      {!token ? (
-        <section className="auth-card">
-          <h2>Entrar</h2>
-          <form onSubmit={handleLogin} className="auth-form">
-            <label>
-              Email
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Senha
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-            </label>
-            <button type="submit">Entrar</button>
-          </form>
-          {authError && <p className="error">{authError}</p>}
-        </section>
-      ) : (
-        <section className="session-bar">
-          <div>
-            {loadingMe ? "Carregando sessão..." : `Logado como ${me?.name} (${me?.role})`}
-          </div>
-          <button type="button" onClick={handleLogout}>
-            Sair
-          </button>
-        </section>
-      )}
-
-      <section className="cards">
-        <article className="card">
-          <h3>Usuários e Perfis</h3>
-          <p>SuperAdmin, Gestor, Admin Local, Técnico e Consultivo</p>
-        </article>
-        <article className="card">
-          <h3>Ingestão de Dados</h3>
-          <p>Pipeline planejada para CSV/XLSX em tabelas RAW</p>
-        </article>
-        <article className="card">
-          <h3>Status da API</h3>
-          <p>{health?.status === "ok" ? "Online" : "Aguardando conexão"}</p>
-        </article>
-      </section>
-
-      {token && (
-        <section className="auth-card">
-          <h2>CADU - Cadastro Único (RAW)</h2>
-          <form onSubmit={handleUpload} className="auth-form">
-            <label>
-              Estratégia
-              <select
-                value={uploadStrategy}
-                onChange={(event) => setUploadStrategy(event.target.value)}
-                disabled={uploading}
-              >
-                <option value="replace">replace (substituir tabela)</option>
-                <option value="append">append (agregar linhas)</option>
-              </select>
-            </label>
-            <label>
-              Arquivo (CSV/XLSX)
-              <input
-                type="file"
-                accept=".csv,.xlsx"
-                onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
-                disabled={uploading}
-                required
-              />
-            </label>
-            <button type="submit" disabled={uploading}>
-              {uploading ? "Processando..." : "Processar CADU para RAW"}
-            </button>
-          </form>
-          <div className="progress-wrap" aria-live="polite">
-            <div className="progress-track">
-              <div className="progress-fill" style={{ width: `${uploadProgress}%` }} />
-            </div>
-            <small>{uploading ? `Enviando arquivo: ${uploadProgress}%` : "Aguardando envio"}</small>
-          </div>
-          {uploadStatus && <p>{uploadStatus}</p>}
-        </section>
-      )}
-
-      {token && (
-        <section className="auth-card">
-          <h2>SIBEC - Manutenções Mensais (RAW)</h2>
-          <form onSubmit={handleUploadPbf} className="auth-form">
-            <label>
-              Competência (AAAAMM)
-              <input
-                type="text"
-                value={uploadPbfCompetencia}
-                onChange={(event) => setUploadPbfCompetencia(event.target.value)}
-                placeholder="202505"
-                maxLength={6}
-                disabled={uploadingPbf}
-                required
-              />
-            </label>
-            <label>
-              Estratégia
-              <select
-                value={uploadPbfStrategy}
-                onChange={(event) => setUploadPbfStrategy(event.target.value)}
-                disabled={uploadingPbf}
-              >
-                <option value="replace">replace (substituir tabela)</option>
-                <option value="append">append (agregar linhas)</option>
-              </select>
-            </label>
-            <label className="checkbox-inline">
-              <input
-                type="checkbox"
-                checked={uploadPbfOverwriteCompetencia}
-                onChange={(event) => setUploadPbfOverwriteCompetencia(event.target.checked)}
-                disabled={uploadingPbf}
-              />
-              Sobrescrever esta competência se já existir
-            </label>
-            <label>
-              Arquivo (CSV/XLSX)
-              <input
-                type="file"
-                accept=".csv,.xlsx"
-                onChange={(event) => setUploadPbfFile(event.target.files?.[0] || null)}
-                disabled={uploadingPbf}
-                required
-              />
-            </label>
-            <button type="submit" disabled={uploadingPbf}>
-              {uploadingPbf ? "Processando..." : "Processar SIBEC Manutenções"}
-            </button>
-          </form>
-          <div className="progress-wrap" aria-live="polite">
-            <div className="progress-track">
-              <div className="progress-fill" style={{ width: `${uploadPbfProgress}%` }} />
-            </div>
-            <small>{uploadingPbf ? `Enviando arquivo: ${uploadPbfProgress}%` : "Aguardando envio"}</small>
-          </div>
-          {uploadPbfStatus && <p>{uploadPbfStatus}</p>}
-        </section>
-      )}
-
-      {token && (
-        <section className="auth-card">
-          <h2>BPC - Benefício de Prestação Continuada (RAW)</h2>
-          <form onSubmit={handleUploadBpc} className="auth-form">
-            <label>
-              Estratégia
-              <select
-                value={uploadBpcStrategy}
-                onChange={(event) => setUploadBpcStrategy(event.target.value)}
-                disabled={uploadingBpc}
-              >
-                <option value="replace">replace (substituir tabela)</option>
-                <option value="append">append (agregar linhas)</option>
-              </select>
-            </label>
-            <label>
-              Arquivo (CSV/XLSX)
-              <input
-                type="file"
-                accept=".csv,.xlsx"
-                onChange={(event) => setUploadBpcFile(event.target.files?.[0] || null)}
-                disabled={uploadingBpc}
-                required
-              />
-            </label>
-            <button type="submit" disabled={uploadingBpc}>
-              {uploadingBpc ? "Processando..." : "Processar BPC para RAW"}
-            </button>
-          </form>
-          <div className="progress-wrap" aria-live="polite">
-            <div className="progress-track">
-              <div className="progress-fill" style={{ width: `${uploadBpcProgress}%` }} />
-            </div>
-            <small>{uploadingBpc ? `Enviando arquivo: ${uploadBpcProgress}%` : "Aguardando envio"}</small>
-          </div>
-          {uploadBpcStatus && <p>{uploadBpcStatus}</p>}
-        </section>
-      )}
-
-      {me?.role === "superadmin" && (
-        <section className="auth-card">
-          <h2>Gestão de Usuários</h2>
-          <form onSubmit={handleCreateUser} className="auth-form">
-            <label>
-              Nome
-              <input
-                type="text"
-                value={newUser.name}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, name: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Email
-              <input
-                type="email"
-                value={newUser.email}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, email: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Senha
-              <input
-                type="password"
-                value={newUser.password}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, password: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Perfil
-              <select
-                value={newUser.role}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, role: event.target.value }))}
-              >
-                <option value="gestor">Gestor</option>
-                <option value="admin_local">Admin Local</option>
-                <option value="tecnico">Técnico</option>
-                <option value="consultivo">Consultivo</option>
-              </select>
-            </label>
-            <button type="submit">Criar usuário</button>
-          </form>
-          {userError && <p className="error">{userError}</p>}
-          <div className="users-list">
-            {users.map((user) => (
-              <div className="user-row" key={user.id}>
-                <strong>{user.name}</strong>
-                <span>{user.email}</span>
-                <span>{user.role}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-    </main>
+    <BrowserRouter>
+      <main className="page">
+        <Routes>
+          <Route
+            path="/"
+            element={
+              !token ? (
+                <>
+                  <header className="hero">
+                    <h1>VigSocial</h1>
+                    <p>Painel inicial da Vigilância Socioassistencial</p>
+                  </header>
+                  <section className="auth-card">
+                    <h2>Entrar</h2>
+                    <form onSubmit={handleLogin} className="auth-form">
+                      <label>
+                        Email
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(event) => setEmail(event.target.value)}
+                          required
+                        />
+                      </label>
+                      <label>
+                        Senha
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(event) => setPassword(event.target.value)}
+                          required
+                        />
+                      </label>
+                      <button type="submit">Entrar</button>
+                    </form>
+                    {authError && <p className="error">{authError}</p>}
+                  </section>
+                  <section className="cards">
+                    <article className="card">
+                      <h3>Vigilância socioassistencial</h3>
+                      <p>Faça login para acessar o painel e a ingestão de dados.</p>
+                    </article>
+                  </section>
+                </>
+              ) : (
+                <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
+                  <DashboardHome
+                    health={health}
+                    me={me}
+                    users={users}
+                    userError={userError}
+                    newUser={newUser}
+                    setNewUser={setNewUser}
+                    onCreateUser={handleCreateUser}
+                  />
+                </AppShell>
+              )
+            }
+          />
+          <Route
+            path="/ingestao"
+            element={
+              token ? (
+                <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
+                  <IngestaoPage token={token} />
+                </AppShell>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
+    </BrowserRouter>
   );
 }
