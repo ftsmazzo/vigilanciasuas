@@ -48,6 +48,11 @@ export default function App() {
   const [uploadStatus, setUploadStatus] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [uploadPbfFile, setUploadPbfFile] = useState<File | null>(null);
+  const [uploadPbfStrategy, setUploadPbfStrategy] = useState("replace");
+  const [uploadPbfStatus, setUploadPbfStatus] = useState("");
+  const [uploadPbfProgress, setUploadPbfProgress] = useState(0);
+  const [uploadingPbf, setUploadingPbf] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/health`)
@@ -196,9 +201,7 @@ export default function App() {
         const responseBody = xhr.responseText ? JSON.parse(xhr.responseText) : {};
         if (xhr.status >= 200 && xhr.status < 300) {
           setUploadProgress(100);
-          setUploadStatus(
-            `Ingestão CADU concluída em raw.${responseBody.target_table} | linhas: ${responseBody.row_count} | estratégia: ${responseBody.strategy}`
-          );
+          setUploadStatus(`Dados inseridos com sucesso. Total de ${responseBody.row_count} registros.`);
           setUploadFile(null);
           return;
         }
@@ -211,6 +214,62 @@ export default function App() {
     xhr.onerror = () => {
       setUploading(false);
       setUploadStatus("Erro de rede durante a ingestão.");
+    };
+
+    xhr.send(formData);
+  }
+
+  async function handleUploadPbf(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUploadPbfStatus("");
+    setUploadPbfProgress(0);
+
+    if (!uploadPbfFile) {
+      setUploadPbfStatus("Selecione um arquivo CSV ou XLSX.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", uploadPbfFile);
+    formData.append("source", "sibec");
+    formData.append("dataset", "programa_bolsa_familia");
+    formData.append("strategy", uploadPbfStrategy);
+    formData.append("csv_delimiter", ";");
+
+    setUploadingPbf(true);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/api/v1/ingestion/import`);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+    xhr.upload.onprogress = (progressEvent) => {
+      if (!progressEvent.lengthComputable) {
+        return;
+      }
+      const percentage = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+      setUploadPbfProgress(percentage);
+    };
+
+    xhr.onload = () => {
+      setUploadingPbf(false);
+      try {
+        const responseBody = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setUploadPbfProgress(100);
+          setUploadPbfStatus(
+            `Dados inseridos com sucesso. Total de ${responseBody.row_count} registros na base Programa Bolsa Familia.`
+          );
+          setUploadPbfFile(null);
+          return;
+        }
+        setUploadPbfStatus(responseBody.detail || "Falha na ingestão. Confirme formato, dados e sessão.");
+      } catch {
+        setUploadPbfStatus("Falha na ingestão. Tente novamente.");
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploadingPbf(false);
+      setUploadPbfStatus("Erro de rede durante a ingestão.");
     };
 
     xhr.send(formData);
@@ -311,6 +370,45 @@ export default function App() {
             <small>{uploading ? `Enviando arquivo: ${uploadProgress}%` : "Aguardando envio"}</small>
           </div>
           {uploadStatus && <p>{uploadStatus}</p>}
+        </section>
+      )}
+
+      {token && (
+        <section className="auth-card">
+          <h2>Programa Bolsa Familia (RAW)</h2>
+          <form onSubmit={handleUploadPbf} className="auth-form">
+            <label>
+              Estratégia
+              <select
+                value={uploadPbfStrategy}
+                onChange={(event) => setUploadPbfStrategy(event.target.value)}
+                disabled={uploadingPbf}
+              >
+                <option value="replace">replace (substituir tabela)</option>
+                <option value="append">append (agregar linhas)</option>
+              </select>
+            </label>
+            <label>
+              Arquivo (CSV/XLSX)
+              <input
+                type="file"
+                accept=".csv,.xlsx"
+                onChange={(event) => setUploadPbfFile(event.target.files?.[0] || null)}
+                disabled={uploadingPbf}
+                required
+              />
+            </label>
+            <button type="submit" disabled={uploadingPbf}>
+              {uploadingPbf ? "Processando..." : "Processar Bolsa Familia para RAW"}
+            </button>
+          </form>
+          <div className="progress-wrap" aria-live="polite">
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: `${uploadPbfProgress}%` }} />
+            </div>
+            <small>{uploadingPbf ? `Enviando arquivo: ${uploadPbfProgress}%` : "Aguardando envio"}</small>
+          </div>
+          {uploadPbfStatus && <p>{uploadPbfStatus}</p>}
         </section>
       )}
 
