@@ -44,10 +44,10 @@ export default function App() {
     role: "tecnico",
   });
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploadSource, setUploadSource] = useState("manual");
-  const [uploadDataset, setUploadDataset] = useState("cadu");
   const [uploadStrategy, setUploadStrategy] = useState("replace");
   const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/health`)
@@ -163,6 +163,7 @@ export default function App() {
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setUploadStatus("");
+    setUploadProgress(0);
 
     if (!uploadFile) {
       setUploadStatus("Selecione um arquivo CSV ou XLSX.");
@@ -171,32 +172,48 @@ export default function App() {
 
     const formData = new FormData();
     formData.append("file", uploadFile);
-    formData.append("source", uploadSource);
-    formData.append("dataset", uploadDataset);
+    formData.append("source", "cecad");
+    formData.append("dataset", "cadu");
     formData.append("strategy", uploadStrategy);
     formData.append("csv_delimiter", ";");
 
-    try {
-      const response = await fetch(`${API_URL}/api/v1/ingestion/import`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+    setUploading(true);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_URL}/api/v1/ingestion/import`);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
-      if (!response.ok) {
-        throw new Error("Erro no upload");
+    xhr.upload.onprogress = (progressEvent) => {
+      if (!progressEvent.lengthComputable) {
+        return;
       }
+      const percentage = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+      setUploadProgress(percentage);
+    };
 
-      const data = await response.json();
-      setUploadStatus(
-        `Ingestão concluída em raw.${data.target_table} | linhas: ${data.row_count} | estratégia: ${data.strategy}`
-      );
-      setUploadFile(null);
-    } catch {
-      setUploadStatus("Falha na ingestão. Confirme formato, dados e sessão.");
-    }
+    xhr.onload = () => {
+      setUploading(false);
+      try {
+        const responseBody = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setUploadProgress(100);
+          setUploadStatus(
+            `Ingestão CADU concluída em raw.${responseBody.target_table} | linhas: ${responseBody.row_count} | estratégia: ${responseBody.strategy}`
+          );
+          setUploadFile(null);
+          return;
+        }
+        setUploadStatus(responseBody.detail || "Falha na ingestão. Confirme formato, dados e sessão.");
+      } catch {
+        setUploadStatus("Falha na ingestão. Tente novamente.");
+      }
+    };
+
+    xhr.onerror = () => {
+      setUploading(false);
+      setUploadStatus("Erro de rede durante a ingestão.");
+    };
+
+    xhr.send(formData);
   }
 
   return (
@@ -260,32 +277,14 @@ export default function App() {
 
       {token && (
         <section className="auth-card">
-          <h2>Upload de Dados RAW</h2>
+          <h2>CADU - Cadastro Único (RAW)</h2>
           <form onSubmit={handleUpload} className="auth-form">
-            <label>
-              Fonte
-              <input
-                type="text"
-                value={uploadSource}
-                onChange={(event) => setUploadSource(event.target.value)}
-                placeholder="ex: CECAD"
-              />
-            </label>
-            <label>
-              Dataset
-              <input
-                type="text"
-                value={uploadDataset}
-                onChange={(event) => setUploadDataset(event.target.value)}
-                placeholder="ex: cadu"
-                required
-              />
-            </label>
             <label>
               Estratégia
               <select
                 value={uploadStrategy}
                 onChange={(event) => setUploadStrategy(event.target.value)}
+                disabled={uploading}
               >
                 <option value="replace">replace (substituir tabela)</option>
                 <option value="append">append (agregar linhas)</option>
@@ -297,11 +296,20 @@ export default function App() {
                 type="file"
                 accept=".csv,.xlsx"
                 onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
+                disabled={uploading}
                 required
               />
             </label>
-            <button type="submit">Processar para RAW</button>
+            <button type="submit" disabled={uploading}>
+              {uploading ? "Processando..." : "Processar CADU para RAW"}
+            </button>
           </form>
+          <div className="progress-wrap" aria-live="polite">
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: `${uploadProgress}%` }} />
+            </div>
+            <small>{uploading ? `Enviando arquivo: ${uploadProgress}%` : "Aguardando envio"}</small>
+          </div>
           {uploadStatus && <p>{uploadStatus}</p>}
         </section>
       )}
