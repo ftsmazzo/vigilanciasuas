@@ -46,7 +46,7 @@ def get_vigilance_kpis(
                   COUNT(*) FILTER (WHERE marc_pbf IS TRUE)::bigint AS n_bf,
                   COUNT(*) FILTER (
                     WHERE meses_desatualizado IS NOT NULL AND meses_desatualizado <= 24
-                  )::bigint AS n_tac_24m,
+                  )::bigint AS n_tac,
                   COALESCE(
                     SUM(vlrtotal) FILTER (WHERE marc_pbf IS TRUE),
                     0::numeric
@@ -58,7 +58,7 @@ def get_vigilance_kpis(
         fr = fam_row or {}
         total_familias = int(fr.get("n_fam") or 0)
         total_bolsa_familia = int(fr.get("n_bf") or 0)
-        tac_familias_24m = int(fr.get("n_tac_24m") or 0)
+        tac_familias = int(fr.get("n_tac") or 0)
         total_pago_bf = float(fr.get("total_pago_bf") or 0)
 
         total_pessoas = int(conn.execute(text("SELECT COUNT(*) FROM vig.mvw_pessoas")).scalar() or 0)
@@ -106,8 +106,8 @@ def get_vigilance_kpis(
         "pct_mulheres": pct(total_mulheres, total_pessoas),
         "total_bolsa_familia": total_bolsa_familia,
         "pct_bolsa_familia_cadu": pct(total_bolsa_familia, total_familias),
-        "tac_familias_24m": tac_familias_24m,
-        "tac_pct": pct(tac_familias_24m, total_familias),
+        "tac_familias": tac_familias,
+        "tac_pct": pct(tac_familias, total_familias),
         "total_pago_bolsa_familia": round(total_pago_bf, 2),
         "media_valor_bolsa_familia": media_valor_bf,
     }

@@ -15,7 +15,7 @@ type VigilanciaKpis = {
   pct_mulheres: number;
   total_bolsa_familia: number;
   pct_bolsa_familia_cadu: number;
-  tac_familias_24m: number;
+  tac_familias: number;
   tac_pct: number;
   total_pago_bolsa_familia: number;
   media_valor_bolsa_familia: number;
@@ -63,7 +63,7 @@ export default function PainelIndicadoresInicio({ token }: Props) {
     <section className="kpi-page">
       <div className="kpi-head">
         <h1>Indicadores</h1>
-        <p>Cadastro Único (CECAD), folha Bolsa Família e indicadores de atualização cadastral.</p>
+        <p>Cadastro Único (CECAD) e folha Bolsa Família.</p>
         <button type="button" onClick={() => void loadKpis()} disabled={loading}>
           {loading ? "Atualizando..." : "Atualizar indicadores"}
         </button>
@@ -101,7 +101,7 @@ export default function PainelIndicadoresInicio({ token }: Props) {
           </div>
 
           <h2 className="kpi-section-title">Bolsa Família e TAC</h2>
-          <div className="kpi-grid" aria-label="Bolsa Família e taxa de atualização cadastral">
+          <div className="kpi-grid" aria-label="Bolsa Família e TAC">
             <article className="kpi-card">
               <small>Famílias na folha Bolsa Família</small>
               <strong>{kpis.total_bolsa_familia.toLocaleString("pt-BR")}</strong>
@@ -110,22 +110,19 @@ export default function PainelIndicadoresInicio({ token }: Props) {
               </span>
             </article>
             <article className="kpi-card">
-              <small>TAC — atualização cadastral (24 meses)</small>
+              <small>TAC</small>
               <strong>{kpis.tac_pct.toLocaleString("pt-BR")} %</strong>
-              <span>
-                {kpis.tac_familias_24m.toLocaleString("pt-BR")} famílias com data de atualização nos últimos
-                24 meses
-              </span>
+              <span>{kpis.tac_familias.toLocaleString("pt-BR")} famílias</span>
             </article>
             <article className="kpi-card">
               <small>Total pago (Bolsa Família)</small>
               <strong>{brl.format(kpis.total_pago_bolsa_familia)}</strong>
-              <span>Soma dos valores na folha consolidada (município)</span>
+              <span>Total na folha</span>
             </article>
             <article className="kpi-card">
               <small>Média por família na folha</small>
               <strong>{brl.format(kpis.media_valor_bolsa_familia)}</strong>
-              <span>Valor médio entre famílias com pagamento na folha</span>
+              <span>Média por família beneficiária</span>
             </article>
           </div>
         </>
