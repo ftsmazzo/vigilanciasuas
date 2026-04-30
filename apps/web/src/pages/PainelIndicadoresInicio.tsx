@@ -6,6 +6,21 @@ type Props = {
   token: string;
 };
 
+type ManutAcaokpi = {
+  acao: string;
+  linhas: number;
+  pct_linhas: number;
+  familias_distintas: number;
+  pct_familias: number;
+};
+
+type ManutencoesKpi = {
+  competencia: string;
+  total_acoes: number;
+  familias_distintas: number;
+  por_acao: ManutAcaokpi[];
+};
+
 type VigilanciaKpis = {
   total_familias: number;
   total_pessoas: number;
@@ -30,6 +45,7 @@ type VigilanciaKpis = {
   pct_bpc_idoso: number;
   total_bpc_deficiente: number;
   pct_bpc_deficiente: number;
+  manutencoes?: ManutencoesKpi;
 };
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -170,6 +186,31 @@ export default function PainelIndicadoresInicio({ token }: Props) {
               <strong>{kpis.total_bpc_deficiente.toLocaleString("pt-BR")}</strong>
               <span>{kpis.pct_bpc_deficiente.toLocaleString("pt-BR")} % do total de BPC ativo</span>
             </article>
+          </div>
+
+          <h2 className="kpi-section-title">
+            Manutenções SIBEC — março/2026 (competência {kpis.manutencoes?.competencia ?? "202603"})
+          </h2>
+          <div className="kpi-grid kpi-grid-manut" aria-label="Manutenções por ação">
+            <article className="kpi-card">
+              <small>Total de ações no mês</small>
+              <strong>{(kpis.manutencoes?.total_acoes ?? 0).toLocaleString("pt-BR")}</strong>
+              <span>
+                {(kpis.manutencoes?.familias_distintas ?? 0).toLocaleString("pt-BR")} famílias distintas (código
+                familiar)
+              </span>
+            </article>
+            {(kpis.manutencoes?.por_acao ?? []).map((item) => (
+              <article className="kpi-card" key={item.acao}>
+                <small>Ação — {item.acao}</small>
+                <strong>{item.linhas.toLocaleString("pt-BR")}</strong>
+                <span>
+                  {item.pct_linhas.toLocaleString("pt-BR")} % das ações ·{" "}
+                  {item.familias_distintas.toLocaleString("pt-BR")} famílias (
+                  {item.pct_familias.toLocaleString("pt-BR")} % das famílias com manutenção no mês)
+                </span>
+              </article>
+            ))}
           </div>
         </>
       )}

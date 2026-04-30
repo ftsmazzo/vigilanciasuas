@@ -8,10 +8,17 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..models import User
 from ..vigilance.domicilio_mview import refresh_domicilio_mview
-from ..vigilance.familia_mview import bolsa_folha_kpis_from_raw, refresh_familia_mview
+from ..vigilance.familia_mview import (
+    bolsa_folha_kpis_from_raw,
+    ensure_vig_functions,
+    refresh_familia_mview,
+)
 from ..vigilance.pessoas_mview import refresh_pessoas_mview
 
 router = APIRouter(prefix="/vigilance", tags=["vigilance"])
+
+# Painel: manutenções SIBEC — março/2026 (competência AAAAMM da ingestão).
+MANUT_KPI_COMPETENCIA = "202603"
 
 
 def _qi(ident: str) -> str:
@@ -27,6 +34,137 @@ def _pick_column(cols: set[str], candidates: tuple[str, ...]) -> str | None:
         if c.lower() in lower_map:
             return lower_map[c.lower()]
     return None
+
+
+def _manutencoes_kpis_from_raw(conn, competencia: str) -> dict:
+    """Conta linhas de manutenção por tipo de ação e famílias distintas (código familiar normalizado)."""
+    ensure_vig_functions(conn)
+    table_name = conn.execute(
+        text(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'raw'
+              AND table_name LIKE '%__manutencoes'
+            ORDER BY table_name
+            LIMIT 1
+            """
+        )
+    ).scalar()
+    if not table_name:
+        return {
+            "competencia": competencia,
+            "total_acoes": 0,
+            "familias_distintas": 0,
+            "por_acao": [],
+        }
+
+    cols_rows = conn.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'raw' AND table_name = :t
+            """
+        ),
+        {"t": table_name},
+    ).all()
+    cols = {r[0] for r in cols_rows}
+    fam_col = _pick_column(
+        cols,
+        ("cod_familiar", "cod_familiar_fam", "d_cod_familiar_fam", "codigo_familiar"),
+    )
+    acao_col = _pick_column(cols, ("acao",))
+    ref_col = _pick_column(cols, ("ref_folha", "ref_folha_pbf", "competencia"))
+
+    if not fam_col or not acao_col:
+        return {
+            "competencia": competencia,
+            "total_acoes": 0,
+            "familias_distintas": 0,
+            "por_acao": [],
+        }
+
+    if "competencia" in cols:
+        filtro_mes = f"btrim(COALESCE({_qi('competencia')}::text, '')) = btrim(:competencia)"
+    elif ref_col:
+        filtro_mes = f"btrim(COALESCE({_qi(ref_col)}::text, '')) = btrim(:competencia)"
+    else:
+        return {
+            "competencia": competencia,
+            "total_acoes": 0,
+            "familias_distintas": 0,
+            "por_acao": [],
+        }
+
+    base_cte = f"""
+    WITH m AS (
+      SELECT
+        vig.norm_familia_cod({_qi(fam_col)}::text) AS cod_fam,
+        NULLIF(upper(btrim(COALESCE({_qi(acao_col)}::text, ''))), '') AS acao_txt
+      FROM raw.{_qi(table_name)} m
+      WHERE {filtro_mes}
+    )
+    """
+    row_tot = conn.execute(
+        text(
+            base_cte
+            + """
+    SELECT
+      COUNT(*)::bigint AS total_acoes,
+      COUNT(DISTINCT cod_fam) FILTER (WHERE cod_fam IS NOT NULL)::bigint AS familias_distintas
+    FROM m
+    WHERE acao_txt IS NOT NULL
+    """
+        ),
+        {"competencia": competencia},
+    ).mappings().first() or {}
+    total = int(row_tot.get("total_acoes") or 0)
+    n_fam_tot = int(row_tot.get("familias_distintas") or 0)
+
+    detail_rows = conn.execute(
+        text(
+            base_cte
+            + """
+    SELECT
+      acao_txt,
+      COUNT(*)::bigint AS n_lin,
+      COUNT(DISTINCT cod_fam) FILTER (WHERE cod_fam IS NOT NULL)::bigint AS n_fam
+    FROM m
+    WHERE acao_txt IS NOT NULL
+    GROUP BY acao_txt
+    ORDER BY n_lin DESC, acao_txt
+    """
+        ),
+        {"competencia": competencia},
+    ).mappings().all()
+
+    def pct_part(n: int, den: int) -> float:
+        if den <= 0:
+            return 0.0
+        return round((n / den) * 100, 2)
+
+    por_acao = []
+    for r in detail_rows:
+        label = str(r.get("acao_txt") or "").strip()
+        linhas = int(r.get("n_lin") or 0)
+        n_fam = int(r.get("n_fam") or 0)
+        por_acao.append(
+            {
+                "acao": label,
+                "linhas": linhas,
+                "pct_linhas": pct_part(linhas, total),
+                "familias_distintas": n_fam,
+                "pct_familias": pct_part(n_fam, n_fam_tot),
+            }
+        )
+
+    return {
+        "competencia": competencia,
+        "total_acoes": total,
+        "familias_distintas": n_fam_tot,
+        "por_acao": por_acao,
+    }
 
 
 def _bpc_kpis_from_raw(conn) -> tuple[int, int, int]:
@@ -171,6 +309,7 @@ def get_vigilance_kpis(
         total_bolsa_familia = bolsa.total_familias_folha
         total_pago_bf = bolsa.total_pago
         total_bpc, total_bpc_idoso, total_bpc_deficiente = _bpc_kpis_from_raw(conn)
+        manutencoes = _manutencoes_kpis_from_raw(conn, MANUT_KPI_COMPETENCIA)
 
         total_pessoas = int(conn.execute(text("SELECT COUNT(*) FROM vig.mvw_pessoas")).scalar() or 0)
 
@@ -232,6 +371,7 @@ def get_vigilance_kpis(
         "pct_bpc_idoso": pct(total_bpc_idoso, total_bpc),
         "total_bpc_deficiente": total_bpc_deficiente,
         "pct_bpc_deficiente": pct(total_bpc_deficiente, total_bpc),
+        "manutencoes": manutencoes,
     }
 
 
