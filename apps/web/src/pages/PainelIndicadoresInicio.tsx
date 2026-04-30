@@ -14,13 +14,28 @@ type ManutAcaokpi = {
   pct_familias: number;
 };
 
+type ManutGrupoCras = {
+  grupo: string;
+  familias_distintas: number;
+  pct_sobre_manut_cras: number;
+};
+
+type ManutCrasKpi = {
+  num_cras: string;
+  nom_cras: string;
+  familias_com_manutencao: number;
+  top_grupos: ManutGrupoCras[];
+};
+
 type ManutencoesKpi = {
   competencia: string;
   total_acoes: number;
   familias_distintas: number;
-  /** % das famílias com manutenção no mês sobre o total de famílias no Cadastro Único */
-  pct_familias_manutencao_sobre_cadu?: number;
+  /** % das famílias com manutenção no mês sobre o total de famílias na folha Bolsa Família */
+  pct_familias_manutencao_sobre_bolsa?: number;
   por_acao: ManutAcaokpi[];
+  /** Manutenção × CADU com CRAS referenciado; até 5 grupos por unidade */
+  por_cras?: ManutCrasKpi[];
 };
 
 type VigilanciaKpis = {
@@ -63,12 +78,12 @@ function competenciaLabel(comp: string): string {
   return s;
 }
 
-function pctManutencaoSobreCadu(m: ManutencoesKpi | undefined, totalCadu: number): number {
-  if (m?.pct_familias_manutencao_sobre_cadu != null) {
-    return m.pct_familias_manutencao_sobre_cadu;
+function pctManutencaoSobreBolsa(m: ManutencoesKpi | undefined, totalBolsa: number): number {
+  if (m?.pct_familias_manutencao_sobre_bolsa != null) {
+    return m.pct_familias_manutencao_sobre_bolsa;
   }
-  if (!totalCadu) return 0;
-  return Math.round(((m?.familias_distintas ?? 0) / totalCadu) * 10000) / 100;
+  if (!totalBolsa) return 0;
+  return Math.round(((m?.familias_distintas ?? 0) / totalBolsa) * 10000) / 100;
 }
 
 /** Painel de KPIs exibido na página Início (dados Cadastro Único). */
@@ -213,14 +228,15 @@ export default function PainelIndicadoresInicio({ token }: Props) {
             Manutenções SIBEC — competência {competenciaLabel(kpis.manutencoes?.competencia ?? "202603")}
           </h2>
 
-          <h3 className="kpi-subsection-title">Manutenção × Cadastro Único</h3>
-          <div className="kpi-grid kpi-grid-manut" aria-label="Famílias com manutenção sobre o CADU">
+          <h3 className="kpi-subsection-title">Manutenção × folha Bolsa Família</h3>
+          <div className="kpi-grid kpi-grid-manut" aria-label="Famílias com manutenção sobre a folha Bolsa Família">
             <article className="kpi-card">
               <small>Famílias com manutenção no mês</small>
               <strong>{(kpis.manutencoes?.familias_distintas ?? 0).toLocaleString("pt-BR")}</strong>
               <span>
-                {pctManutencaoSobreCadu(kpis.manutencoes, kpis.total_familias).toLocaleString("pt-BR")} % do total de
-                famílias no Cadastro Único ({kpis.total_familias.toLocaleString("pt-BR")} famílias)
+                {pctManutencaoSobreBolsa(kpis.manutencoes, kpis.total_bolsa_familia).toLocaleString("pt-BR")} % do total
+                de famílias na folha Bolsa Família (
+                {kpis.total_bolsa_familia.toLocaleString("pt-BR")} famílias)
               </span>
             </article>
           </div>
@@ -239,6 +255,48 @@ export default function PainelIndicadoresInicio({ token }: Props) {
                   <span>
                     {item.pct_familias.toLocaleString("pt-BR")} % das famílias com manutenção no mês
                   </span>
+                </article>
+              ))
+            )}
+          </div>
+
+          <h3 className="kpi-subsection-title">
+            Por CRAS (referência no CADU) — Cancelar, Bloquear, Suspender, Encerrar e Excluir
+          </h3>
+          <p className="kpi-hint-manut">
+            Famílias da manutenção SIBEC cruzadas com o Cadastro Único; apenas unidades com código ou nome de CRAS
+            preenchido. Ações classificadas por palavras-chave na descrição. Até os cinco grupos com mais famílias por
+            CRAS; percentual sobre as famílias com manutenção naquele CRAS.
+          </p>
+          <div className="kpi-grid kpi-grid-manut" aria-label="Manutenções por CRAS no CADU">
+            {(kpis.manutencoes?.por_cras ?? []).length === 0 ? (
+              <p className="kpi-empty-manut">
+                Nenhum dado neste recorte (verifique manutenções na competência, vínculo com o CADU e referência de
+                CRAS nas famílias).
+              </p>
+            ) : (
+              (kpis.manutencoes?.por_cras ?? []).map((c) => (
+                <article
+                  className="kpi-card kpi-card-cras"
+                  key={`${c.num_cras}|${c.nom_cras}`}
+                >
+                  <small>{c.nom_cras ? c.nom_cras : c.num_cras ? `CRAS ${c.num_cras}` : "CRAS"}</small>
+                  {c.nom_cras && c.num_cras ? (
+                    <span className="kpi-cras-cod">Cód. {c.num_cras}</span>
+                  ) : null}
+                  <strong>{c.familias_com_manutencao.toLocaleString("pt-BR")}</strong>
+                  <span className="kpi-cras-lead">famílias com manutenção neste CRAS</span>
+                  <ul className="kpi-cras-top">
+                    {c.top_grupos.map((g) => (
+                      <li key={g.grupo}>
+                        <span className="kpi-cras-grupo">{g.grupo}</span>
+                        <span className="kpi-cras-grupo-n">
+                          {g.familias_distintas.toLocaleString("pt-BR")} fam. (
+                          {g.pct_sobre_manut_cras.toLocaleString("pt-BR")} %)
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </article>
               ))
             )}

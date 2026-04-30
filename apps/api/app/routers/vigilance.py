@@ -1,4 +1,5 @@
 import time
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
@@ -57,6 +58,7 @@ def _manutencoes_kpis_from_raw(conn, competencia: str) -> dict:
             "total_acoes": 0,
             "familias_distintas": 0,
             "por_acao": [],
+            "por_cras": [],
         }
 
     cols_rows = conn.execute(
@@ -83,6 +85,7 @@ def _manutencoes_kpis_from_raw(conn, competencia: str) -> dict:
             "total_acoes": 0,
             "familias_distintas": 0,
             "por_acao": [],
+            "por_cras": [],
         }
 
     if "competencia" in cols:
@@ -95,12 +98,15 @@ def _manutencoes_kpis_from_raw(conn, competencia: str) -> dict:
             "total_acoes": 0,
             "familias_distintas": 0,
             "por_acao": [],
+            "por_cras": [],
         }
 
+    # Código familiar: ::text força varchar; norm_familia_cod remove não-dígitos e zeros à esquerda.
+    fam_expr = f"vig.norm_familia_cod(COALESCE({_qi(fam_col)}::text, ''))"
     base_cte = f"""
     WITH m AS (
       SELECT
-        vig.norm_familia_cod({_qi(fam_col)}::text) AS cod_fam,
+        {fam_expr} AS cod_fam,
         NULLIF(upper(btrim(COALESCE({_qi(acao_col)}::text, ''))), '') AS acao_txt
       FROM raw.{_qi(table_name)} m
       WHERE {filtro_mes}
@@ -159,12 +165,142 @@ def _manutencoes_kpis_from_raw(conn, competencia: str) -> dict:
             }
         )
 
+    por_cras: list[dict] = []
+    mvw_ok = conn.execute(text("SELECT to_regclass('vig.mvw_familia')")).scalar()
+    if mvw_ok:
+        por_cras = _manutencoes_por_cras_cadu(
+            conn,
+            competencia=competencia,
+            table_name=table_name,
+            fam_col=fam_col,
+            acao_col=acao_col,
+            filtro_mes=filtro_mes,
+        )
+
     return {
         "competencia": competencia,
         "total_acoes": total,
         "familias_distintas": n_fam_tot,
         "por_acao": por_acao,
+        "por_cras": por_cras,
     }
+
+
+def _manutencoes_por_cras_cadu(
+    conn,
+    *,
+    competencia: str,
+    table_name: str,
+    fam_col: str,
+    acao_col: str,
+    filtro_mes: str,
+) -> list[dict]:
+    """
+    Manutenções com código familiar presente no CADU (vig.mvw_familia), apenas famílias com
+    referência de CRAS (código ou nome territorial). Ações mapeadas aos grupos:
+    Cancelar, Bloquear, Suspender, Encerrar, Excluir (via substring na descrição da ação).
+    Por CRAS, retorna até os 5 grupos com mais famílias distintas.
+    """
+    fam_expr = f"vig.norm_familia_cod(COALESCE({_qi(fam_col)}::text, ''))"
+    sql = f"""
+    WITH m AS (
+      SELECT
+        {fam_expr} AS cod_fam,
+        NULLIF(upper(btrim(COALESCE({_qi(acao_col)}::text, ''))), '') AS acao_txt
+      FROM raw.{_qi(table_name)} m
+      WHERE {filtro_mes}
+    ),
+    mb AS (
+      SELECT
+        cod_fam,
+        CASE
+          WHEN acao_txt LIKE '%CANCEL%' THEN 'Cancelar'
+          WHEN acao_txt LIKE '%BLOQUE%' THEN 'Bloquear'
+          WHEN acao_txt LIKE '%SUSPEN%' THEN 'Suspender'
+          WHEN acao_txt LIKE '%ENCERR%' THEN 'Encerrar'
+          WHEN acao_txt LIKE '%EXCLU%' THEN 'Excluir'
+          ELSE NULL
+        END AS acao_grupo
+      FROM m
+      WHERE acao_txt IS NOT NULL AND cod_fam IS NOT NULL
+    ),
+    j AS (
+      SELECT
+        f.num_cras,
+        f.nom_cras,
+        mb.cod_fam,
+        mb.acao_grupo
+      FROM mb
+      INNER JOIN vig.mvw_familia f ON f.codigo_familiar = mb.cod_fam
+      WHERE mb.acao_grupo IS NOT NULL
+        AND (
+          (f.num_cras IS NOT NULL AND btrim(f.num_cras::text) <> '')
+          OR (f.nom_cras IS NOT NULL AND btrim(f.nom_cras::text) <> '')
+        )
+    ),
+    agg AS (
+      SELECT
+        btrim(COALESCE(num_cras::text, '')) AS num_cras,
+        btrim(COALESCE(nom_cras::text, '')) AS nom_cras,
+        acao_grupo,
+        COUNT(DISTINCT cod_fam)::bigint AS n_fam
+      FROM j
+      GROUP BY 1, 2, 3
+    ),
+    tot AS (
+      SELECT
+        btrim(COALESCE(num_cras::text, '')) AS num_cras,
+        btrim(COALESCE(nom_cras::text, '')) AS nom_cras,
+        COUNT(DISTINCT cod_fam)::bigint AS n_fam_cras
+      FROM j
+      GROUP BY 1, 2
+    )
+    SELECT
+      a.num_cras,
+      a.nom_cras,
+      a.acao_grupo,
+      a.n_fam,
+      t.n_fam_cras
+    FROM agg a
+    INNER JOIN tot t ON t.num_cras = a.num_cras AND t.nom_cras = a.nom_cras
+    ORDER BY t.n_fam_cras DESC, a.num_cras, a.nom_cras, a.n_fam DESC, a.acao_grupo
+    """
+    rows = conn.execute(text(sql), {"competencia": competencia}).mappings().all()
+
+    def pct_part(n: int, den: int) -> float:
+        if den <= 0:
+            return 0.0
+        return round((n / den) * 100, 2)
+
+    buckets_by_cras: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    totals: dict[tuple[str, str], int] = {}
+    for r in rows:
+        key = (str(r.get("num_cras") or ""), str(r.get("nom_cras") or ""))
+        n_fam = int(r.get("n_fam") or 0)
+        n_fam_cras = int(r.get("n_fam_cras") or 0)
+        totals[key] = n_fam_cras
+        grupo = str(r.get("acao_grupo") or "").strip()
+        buckets_by_cras[key].append(
+            {
+                "grupo": grupo,
+                "familias_distintas": n_fam,
+                "pct_sobre_manut_cras": pct_part(n_fam, n_fam_cras),
+            }
+        )
+
+    out: list[dict] = []
+    for key in sorted(buckets_by_cras.keys(), key=lambda k: -totals.get(k, 0)):
+        num_cras, nom_cras = key
+        items = sorted(buckets_by_cras[key], key=lambda x: -int(x["familias_distintas"]))[:5]
+        out.append(
+            {
+                "num_cras": num_cras,
+                "nom_cras": nom_cras,
+                "familias_com_manutencao": totals.get(key, 0),
+                "top_grupos": items,
+            }
+        )
+    return out
 
 
 def _bpc_kpis_from_raw(conn) -> tuple[int, int, int]:
@@ -350,7 +486,7 @@ def get_vigilance_kpis(
     n_fam_manut = int(manutencoes.get("familias_distintas") or 0)
     manutencoes = {
         **manutencoes,
-        "pct_familias_manutencao_sobre_cadu": pct(n_fam_manut, total_familias),
+        "pct_familias_manutencao_sobre_bolsa": pct(n_fam_manut, total_bolsa_familia),
     }
 
     return {

@@ -606,6 +606,77 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.kpi-hint-manut {
+  margin: 0.35rem 0 0;
+  max-width: 52rem;
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.kpi-card-cras {
+  align-items: stretch;
+  text-align: left;
+  min-height: auto;
+  padding: 1rem 1rem 0.85rem;
+}
+
+.kpi-card-cras small {
+  text-align: left;
+  align-self: flex-start;
+  text-transform: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+  line-height: 1.25;
+}
+
+.kpi-cras-cod {
+  font-size: 0.75rem;
+  color: #64748b;
+  align-self: flex-start;
+}
+
+.kpi-card-cras strong {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  font-size: 1.55rem;
+}
+
+.kpi-cras-lead {
+  align-self: flex-start;
+  text-align: left;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.kpi-cras-top {
+  margin: 0.65rem 0 0;
+  padding: 0 0 0 1.1rem;
+  list-style: disc;
+  width: 100%;
+  font-size: 0.82rem;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.kpi-cras-top li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.2rem;
+}
+
+.kpi-cras-grupo {
+  font-weight: 600;
+}
+
+.kpi-cras-grupo-n {
+  color: #475569;
+  white-space: nowrap;
+}
+
 .kpi-grid {
   margin-top: 1rem;
   display: grid;

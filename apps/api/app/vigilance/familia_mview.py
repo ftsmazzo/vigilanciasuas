@@ -125,10 +125,11 @@ RETURNS text
 LANGUAGE sql
 IMMUTABLE
 AS $$
+  /* Somente dígitos, sem espaços internos; remove zeros à esquerda (ex.: SIBEC x CADU). */
   SELECT CASE
-    WHEN vig.only_digits(t) IS NULL THEN NULL
-    WHEN trim(LEADING '0' FROM vig.only_digits(t)) = '' THEN '0'
-    ELSE trim(LEADING '0' FROM vig.only_digits(t))
+    WHEN vig.only_digits(vig.clean_spaces(t)) IS NULL THEN NULL
+    WHEN trim(LEADING '0' FROM vig.only_digits(vig.clean_spaces(t))) = '' THEN '0'
+    ELSE trim(LEADING '0' FROM vig.only_digits(vig.clean_spaces(t)))
   END
 $$;
 """,
