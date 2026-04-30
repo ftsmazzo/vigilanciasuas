@@ -584,12 +584,24 @@ button:disabled {
   color: #475569;
 }
 
+.kpi-section-title {
+  margin: 1.5rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #334155;
+  letter-spacing: 0.01em;
+}
+
 .kpi-grid {
   margin-top: 1rem;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.9rem;
   justify-content: center;
+}
+
+.kpi-section-title + .kpi-grid {
+  margin-top: 0.65rem;
 }
 
 .kpi-card {

@@ -24,6 +24,7 @@ def get_vigilance_kpis(
     - total_familias (vig.mvw_familia)
     - total_pessoas (vig.mvw_pessoas)
     - total_homens / total_mulheres + percentual sobre total de pessoas
+    - Bolsa Família e TAC (vig.mvw_familia + folha PBF quando houver)
     """
     with db.bind.begin() as conn:
         familias_exists = conn.execute(text("SELECT to_regclass('vig.mvw_familia')")).scalar()
@@ -37,7 +38,29 @@ def get_vigilance_kpis(
                 ),
             )
 
-        total_familias = int(conn.execute(text("SELECT COUNT(*) FROM vig.mvw_familia")).scalar() or 0)
+        fam_row = conn.execute(
+            text(
+                """
+                SELECT
+                  COUNT(*)::bigint AS n_fam,
+                  COUNT(*) FILTER (WHERE marc_pbf IS TRUE)::bigint AS n_bf,
+                  COUNT(*) FILTER (
+                    WHERE meses_desatualizado IS NOT NULL AND meses_desatualizado <= 24
+                  )::bigint AS n_tac_24m,
+                  COALESCE(
+                    SUM(vlrtotal) FILTER (WHERE marc_pbf IS TRUE),
+                    0::numeric
+                  ) AS total_pago_bf
+                FROM vig.mvw_familia
+                """
+            )
+        ).mappings().first()
+        fr = fam_row or {}
+        total_familias = int(fr.get("n_fam") or 0)
+        total_bolsa_familia = int(fr.get("n_bf") or 0)
+        tac_familias_24m = int(fr.get("n_tac_24m") or 0)
+        total_pago_bf = float(fr.get("total_pago_bf") or 0)
+
         total_pessoas = int(conn.execute(text("SELECT COUNT(*) FROM vig.mvw_pessoas")).scalar() or 0)
 
         total_homens = int(
@@ -70,6 +93,10 @@ def get_vigilance_kpis(
             return 0.0
         return round((value / total) * 100, 2)
 
+    media_valor_bf = (
+        round(total_pago_bf / total_bolsa_familia, 2) if total_bolsa_familia > 0 else 0.0
+    )
+
     return {
         "total_familias": total_familias,
         "total_pessoas": total_pessoas,
@@ -77,6 +104,12 @@ def get_vigilance_kpis(
         "pct_homens": pct(total_homens, total_pessoas),
         "total_mulheres": total_mulheres,
         "pct_mulheres": pct(total_mulheres, total_pessoas),
+        "total_bolsa_familia": total_bolsa_familia,
+        "pct_bolsa_familia_cadu": pct(total_bolsa_familia, total_familias),
+        "tac_familias_24m": tac_familias_24m,
+        "tac_pct": pct(tac_familias_24m, total_familias),
+        "total_pago_bolsa_familia": round(total_pago_bf, 2),
+        "media_valor_bolsa_familia": media_valor_bf,
     }
 
 
