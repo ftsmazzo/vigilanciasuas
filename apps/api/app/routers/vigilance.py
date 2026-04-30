@@ -48,13 +48,27 @@ def get_vigilance_kpis(
                     WHERE meses_desatualizado IS NOT NULL AND meses_desatualizado <= 24
                   )::bigint AS n_tac,
                   COUNT(*) FILTER (
-                    WHERE renda_per_capita IS NOT NULL AND renda_per_capita >= 0 AND renda_per_capita <= 218
+                    WHERE
+                      meses_desatualizado IS NOT NULL
+                      AND meses_desatualizado <= 24
+                      AND renda_per_capita IS NOT NULL
+                      AND renda_per_capita >= 0
+                      AND renda_per_capita <= 218
                   )::bigint AS n_renda_ate_218,
                   COUNT(*) FILTER (
-                    WHERE renda_per_capita IS NOT NULL AND renda_per_capita >= 219 AND renda_per_capita <= 706
+                    WHERE
+                      meses_desatualizado IS NOT NULL
+                      AND meses_desatualizado <= 24
+                      AND renda_per_capita IS NOT NULL
+                      AND renda_per_capita >= 219
+                      AND renda_per_capita <= 706
                   )::bigint AS n_renda_219_706,
                   COUNT(*) FILTER (
-                    WHERE renda_per_capita IS NOT NULL AND renda_per_capita > 706
+                    WHERE
+                      meses_desatualizado IS NOT NULL
+                      AND meses_desatualizado <= 24
+                      AND renda_per_capita IS NOT NULL
+                      AND renda_per_capita > 706
                   )::bigint AS n_renda_acima_706
                 FROM vig.mvw_familia
                 """
