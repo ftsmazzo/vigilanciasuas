@@ -34,9 +34,12 @@ type ManutencoesKpi = {
   /** % das famílias com manutenção no mês sobre o total de famílias na folha Bolsa Família */
   pct_familias_manutencao_sobre_bolsa?: number;
   por_acao: ManutAcaokpi[];
-  /** Manutenção × CADU com CRAS referenciado; até 5 grupos por unidade */
+  /** Manutenção × CADU com CRAS referenciado; cinco situações por unidade (fixas) */
   por_cras?: ManutCrasKpi[];
 };
+
+/** Ordem das colunas da tabela por CRAS (alinhada à API). */
+const CRAS_MANUT_COLUNAS = ["Cancelar", "Bloquear", "Suspender", "Encerrar", "Excluir"] as const;
 
 type VigilanciaKpis = {
   total_familias: number;
@@ -260,47 +263,77 @@ export default function PainelIndicadoresInicio({ token }: Props) {
             )}
           </div>
 
-          <h3 className="kpi-subsection-title">
-            Por CRAS (referência no CADU) — Cancelar, Bloquear, Suspender, Encerrar e Excluir
-          </h3>
+          <h3 className="kpi-subsection-title">Por CRAS (referência no CADU)</h3>
           <p className="kpi-hint-manut">
-            Famílias da manutenção SIBEC cruzadas com o Cadastro Único; apenas unidades com código ou nome de CRAS
-            preenchido. Ações classificadas por palavras-chave na descrição. Até os cinco grupos com mais famílias por
-            CRAS; percentual sobre as famílias com manutenção naquele CRAS.
+            Linhas: unidades territoriais (CRAS) com código ou nome no Cadastro Único. Colunas: total de famílias com
+            manutenção no CRAS e distribuição pelas situações (famílias distintas; % sobre o total da linha). Uma família
+            pode aparecer em mais de uma coluna.
           </p>
-          <div className="kpi-grid kpi-grid-manut" aria-label="Manutenções por CRAS no CADU">
-            {(kpis.manutencoes?.por_cras ?? []).length === 0 ? (
-              <p className="kpi-empty-manut">
-                Nenhum dado neste recorte (verifique manutenções na competência, vínculo com o CADU e referência de
-                CRAS nas famílias).
-              </p>
-            ) : (
-              (kpis.manutencoes?.por_cras ?? []).map((c) => (
-                <article
-                  className="kpi-card kpi-card-cras"
-                  key={`${c.num_cras}|${c.nom_cras}`}
-                >
-                  <small>{c.nom_cras ? c.nom_cras : c.num_cras ? `CRAS ${c.num_cras}` : "CRAS"}</small>
-                  {c.nom_cras && c.num_cras ? (
-                    <span className="kpi-cras-cod">Cód. {c.num_cras}</span>
-                  ) : null}
-                  <strong>{c.familias_com_manutencao.toLocaleString("pt-BR")}</strong>
-                  <span className="kpi-cras-lead">famílias com manutenção neste CRAS</span>
-                  <ul className="kpi-cras-top">
-                    {c.top_grupos.map((g) => (
-                      <li key={g.grupo}>
-                        <span className="kpi-cras-grupo">{g.grupo}</span>
-                        <span className="kpi-cras-grupo-n">
-                          {g.familias_distintas.toLocaleString("pt-BR")} fam. (
-                          {g.pct_sobre_manut_cras.toLocaleString("pt-BR")} %)
-                        </span>
-                      </li>
+          {(kpis.manutencoes?.por_cras ?? []).length === 0 ? (
+            <p className="kpi-empty-manut">
+              Nenhum dado neste recorte (verifique manutenções na competência, vínculo com o CADU e referência de CRAS nas
+              famílias).
+            </p>
+          ) : (
+            <div className="kpi-table-wrap" aria-label="Tabela de manutenções por CRAS">
+              <table className="kpi-table kpi-table-cras">
+                <thead>
+                  <tr>
+                    <th scope="col" className="kpi-th-cras">
+                      CRAS
+                    </th>
+                    <th scope="col" className="kpi-th-num">
+                      Cód.
+                    </th>
+                    <th scope="col" className="kpi-th-kpi">
+                      Famílias
+                      <span className="kpi-th-sub">com manutenção</span>
+                    </th>
+                    {CRAS_MANUT_COLUNAS.map((titulo) => (
+                      <th key={titulo} scope="col" className="kpi-th-situacao">
+                        {titulo}
+                        <span className="kpi-th-sub">fam. · % linha</span>
+                      </th>
                     ))}
-                  </ul>
-                </article>
-              ))
-            )}
-          </div>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(kpis.manutencoes?.por_cras ?? []).map((c) => {
+                    const porGrupo = Object.fromEntries(
+                      (c.top_grupos ?? []).map((g) => [g.grupo, g] as const),
+                    );
+                    const label =
+                      c.nom_cras?.trim() ||
+                      (c.num_cras?.trim() ? `CRAS ${c.num_cras}` : "—");
+                    return (
+                      <tr key={`${c.num_cras}|${c.nom_cras}`}>
+                        <th scope="row" className="kpi-td-cras">
+                          {label}
+                        </th>
+                        <td className="kpi-td-num">{c.num_cras?.trim() || "—"}</td>
+                        <td className="kpi-td-kpi">
+                          <span className="kpi-cell-fam">
+                            {c.familias_com_manutencao.toLocaleString("pt-BR")}
+                          </span>
+                        </td>
+                        {CRAS_MANUT_COLUNAS.map((nome) => {
+                          const g = porGrupo[nome];
+                          const n = g?.familias_distintas ?? 0;
+                          const p = g?.pct_sobre_manut_cras ?? 0;
+                          return (
+                            <td key={nome} className="kpi-td-situacao">
+                              <span className="kpi-cell-fam">{n.toLocaleString("pt-BR")}</span>
+                              <span className="kpi-cell-pct">{p.toLocaleString("pt-BR")} %</span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
     </section>

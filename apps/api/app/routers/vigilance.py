@@ -21,6 +21,9 @@ router = APIRouter(prefix="/vigilance", tags=["vigilance"])
 # Painel: manutenções SIBEC — março/2026 (competência AAAAMM da ingestão).
 MANUT_KPI_COMPETENCIA = "202603"
 
+# Ordem fixa das colunas no painel (tabela por CRAS).
+CRAS_MANUT_GRUPOS: tuple[str, ...] = ("Cancelar", "Bloquear", "Suspender", "Encerrar", "Excluir")
+
 
 def _qi(ident: str) -> str:
     return '"' + ident.replace('"', '""') + '"'
@@ -199,7 +202,7 @@ def _manutencoes_por_cras_cadu(
     Manutenções com código familiar presente no CADU (vig.mvw_familia), apenas famílias com
     referência de CRAS (código ou nome territorial). Ações mapeadas aos grupos:
     Cancelar, Bloquear, Suspender, Encerrar, Excluir (via substring na descrição da ação).
-    Por CRAS, retorna até os 5 grupos com mais famílias distintas.
+    Por CRAS, retorna sempre os cinco grupos (zeros onde não houver ocorrência).
     """
     fam_expr = f"vig.norm_familia_cod(COALESCE({_qi(fam_col)}::text, ''))"
     sql = f"""
@@ -272,32 +275,34 @@ def _manutencoes_por_cras_cadu(
             return 0.0
         return round((n / den) * 100, 2)
 
-    buckets_by_cras: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    counts: dict[tuple[str, str], dict[str, int]] = defaultdict(dict)
     totals: dict[tuple[str, str], int] = {}
     for r in rows:
         key = (str(r.get("num_cras") or ""), str(r.get("nom_cras") or ""))
-        n_fam = int(r.get("n_fam") or 0)
-        n_fam_cras = int(r.get("n_fam_cras") or 0)
-        totals[key] = n_fam_cras
+        totals[key] = int(r.get("n_fam_cras") or 0)
         grupo = str(r.get("acao_grupo") or "").strip()
-        buckets_by_cras[key].append(
-            {
-                "grupo": grupo,
-                "familias_distintas": n_fam,
-                "pct_sobre_manut_cras": pct_part(n_fam, n_fam_cras),
-            }
-        )
+        counts[key][grupo] = int(r.get("n_fam") or 0)
 
     out: list[dict] = []
-    for key in sorted(buckets_by_cras.keys(), key=lambda k: -totals.get(k, 0)):
+    for key in sorted(counts.keys(), key=lambda k: -totals.get(k, 0)):
         num_cras, nom_cras = key
-        items = sorted(buckets_by_cras[key], key=lambda x: -int(x["familias_distintas"]))[:5]
+        tot_cras = totals.get(key, 0)
+        grupos_list = []
+        for g in CRAS_MANUT_GRUPOS:
+            n = int(counts[key].get(g, 0))
+            grupos_list.append(
+                {
+                    "grupo": g,
+                    "familias_distintas": n,
+                    "pct_sobre_manut_cras": pct_part(n, tot_cras),
+                }
+            )
         out.append(
             {
                 "num_cras": num_cras,
                 "nom_cras": nom_cras,
-                "familias_com_manutencao": totals.get(key, 0),
-                "top_grupos": items,
+                "familias_com_manutencao": tot_cras,
+                "top_grupos": grupos_list,
             }
         )
     return out

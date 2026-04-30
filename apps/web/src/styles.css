@@ -614,67 +614,124 @@ button:disabled {
   line-height: 1.45;
 }
 
-.kpi-card-cras {
-  align-items: stretch;
-  text-align: left;
-  min-height: auto;
-  padding: 1rem 1rem 0.85rem;
+.kpi-table-wrap {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  -webkit-overflow-scrolling: touch;
 }
 
-.kpi-card-cras small {
-  text-align: left;
-  align-self: flex-start;
-  text-transform: none;
-  font-size: 0.82rem;
-  font-weight: 700;
+.kpi-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
   color: #334155;
+}
+
+.kpi-table-cras th,
+.kpi-table-cras td {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid #e8edf3;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-table-cras thead th {
+  text-align: right;
+  background: linear-gradient(180deg, #f1f5f9 0%, #e8eef5 100%);
+  color: #334155;
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.kpi-th-cras,
+.kpi-td-cras {
+  text-align: left !important;
+  min-width: 11rem;
+  max-width: 18rem;
+}
+
+.kpi-table-cras thead .kpi-th-cras {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  box-shadow: 4px 0 12px rgba(15, 23, 42, 0.06);
+}
+
+.kpi-td-cras {
+  font-weight: 600;
+  color: #0f172a;
+  background: #fafbfc;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-shadow: 4px 0 12px rgba(15, 23, 42, 0.04);
+}
+
+.kpi-th-num,
+.kpi-td-num {
+  text-align: center !important;
+  white-space: nowrap;
+  min-width: 4.5rem;
+}
+
+.kpi-th-kpi,
+.kpi-td-kpi {
+  text-align: right !important;
+  min-width: 5.5rem;
+}
+
+.kpi-th-situacao,
+.kpi-td-situacao {
+  text-align: right !important;
+  min-width: 5.75rem;
+}
+
+.kpi-th-sub {
+  display: block;
+  font-weight: 600;
+  font-size: 0.65rem;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  margin-top: 0.2rem;
+}
+
+.kpi-table-cras tbody tr:nth-child(even) .kpi-td-cras {
+  background: #f4f6f9;
+}
+
+.kpi-table-cras tbody tr:nth-child(even) {
+  background: #fafcfe;
+}
+
+.kpi-table-cras tbody tr:hover {
+  background: #f0f9ff;
+}
+
+.kpi-table-cras tbody tr:hover .kpi-td-cras {
+  background: #e0f2fe;
+}
+
+.kpi-cell-fam {
+  display: block;
+  font-weight: 600;
+  color: #0f172a;
   line-height: 1.25;
 }
 
-.kpi-cras-cod {
-  font-size: 0.75rem;
-  color: #64748b;
-  align-self: flex-start;
-}
-
-.kpi-card-cras strong {
-  align-self: flex-start;
-  margin-top: 0.25rem;
-  font-size: 1.55rem;
-}
-
-.kpi-cras-lead {
-  align-self: flex-start;
-  text-align: left;
-  font-size: 0.8rem;
-  color: #64748b;
-}
-
-.kpi-cras-top {
-  margin: 0.65rem 0 0;
-  padding: 0 0 0 1.1rem;
-  list-style: disc;
-  width: 100%;
-  font-size: 0.82rem;
-  color: #334155;
-  line-height: 1.5;
-}
-
-.kpi-cras-top li {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.35rem 0.75rem;
-  margin-bottom: 0.2rem;
-}
-
-.kpi-cras-grupo {
+.kpi-cell-pct {
+  display: block;
+  font-size: 0.72rem;
   font-weight: 600;
-}
-
-.kpi-cras-grupo-n {
-  color: #475569;
-  white-space: nowrap;
+  color: #64748b;
+  margin-top: 0.08rem;
 }
 
 .kpi-grid {
