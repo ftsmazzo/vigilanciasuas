@@ -19,6 +19,12 @@ type VigilanciaKpis = {
   tac_pct: number;
   total_pago_bolsa_familia: number;
   media_valor_bolsa_familia: number;
+  renda_ate_218_familias: number;
+  renda_ate_218_pct: number;
+  renda_219_706_familias: number;
+  renda_219_706_pct: number;
+  renda_acima_706_familias: number;
+  renda_acima_706_pct: number;
 };
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -120,6 +126,25 @@ export default function PainelIndicadoresInicio({ token }: Props) {
               <small>Média por família na folha</small>
               <strong>{brl.format(kpis.media_valor_bolsa_familia)}</strong>
               <span>Média por família beneficiária</span>
+            </article>
+          </div>
+
+          <h2 className="kpi-section-title">Renda Per Capita</h2>
+          <div className="kpi-grid kpi-grid-3" aria-label="Faixas de renda per capita">
+            <article className="kpi-card">
+              <small>Renda per capita de 0,00 até 218</small>
+              <strong>{kpis.renda_ate_218_familias.toLocaleString("pt-BR")}</strong>
+              <span>{kpis.renda_ate_218_pct.toLocaleString("pt-BR")} % das famílias do Cadastro Único</span>
+            </article>
+            <article className="kpi-card">
+              <small>Renda per capita de 219 até 706</small>
+              <strong>{kpis.renda_219_706_familias.toLocaleString("pt-BR")}</strong>
+              <span>{kpis.renda_219_706_pct.toLocaleString("pt-BR")} % das famílias do Cadastro Único</span>
+            </article>
+            <article className="kpi-card">
+              <small>Renda per capita acima de 706</small>
+              <strong>{kpis.renda_acima_706_familias.toLocaleString("pt-BR")}</strong>
+              <span>{kpis.renda_acima_706_pct.toLocaleString("pt-BR")} % das famílias do Cadastro Único</span>
             </article>
           </div>
         </>

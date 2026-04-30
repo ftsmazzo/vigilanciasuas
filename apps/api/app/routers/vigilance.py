@@ -46,7 +46,16 @@ def get_vigilance_kpis(
                   COUNT(*)::bigint AS n_fam,
                   COUNT(*) FILTER (
                     WHERE meses_desatualizado IS NOT NULL AND meses_desatualizado <= 24
-                  )::bigint AS n_tac
+                  )::bigint AS n_tac,
+                  COUNT(*) FILTER (
+                    WHERE renda_per_capita IS NOT NULL AND renda_per_capita >= 0 AND renda_per_capita <= 218
+                  )::bigint AS n_renda_ate_218,
+                  COUNT(*) FILTER (
+                    WHERE renda_per_capita IS NOT NULL AND renda_per_capita >= 219 AND renda_per_capita <= 706
+                  )::bigint AS n_renda_219_706,
+                  COUNT(*) FILTER (
+                    WHERE renda_per_capita IS NOT NULL AND renda_per_capita > 706
+                  )::bigint AS n_renda_acima_706
                 FROM vig.mvw_familia
                 """
             )
@@ -54,6 +63,9 @@ def get_vigilance_kpis(
         fr = fam_row or {}
         total_familias = int(fr.get("n_fam") or 0)
         tac_familias = int(fr.get("n_tac") or 0)
+        renda_ate_218_familias = int(fr.get("n_renda_ate_218") or 0)
+        renda_219_706_familias = int(fr.get("n_renda_219_706") or 0)
+        renda_acima_706_familias = int(fr.get("n_renda_acima_706") or 0)
 
         bolsa = bolsa_folha_kpis_from_raw(conn)
         total_bolsa_familia = bolsa.total_familias_folha
@@ -108,6 +120,12 @@ def get_vigilance_kpis(
         "tac_pct": pct(tac_familias, total_familias),
         "total_pago_bolsa_familia": round(total_pago_bf, 2),
         "media_valor_bolsa_familia": media_valor_bf,
+        "renda_ate_218_familias": renda_ate_218_familias,
+        "renda_ate_218_pct": pct(renda_ate_218_familias, total_familias),
+        "renda_219_706_familias": renda_219_706_familias,
+        "renda_219_706_pct": pct(renda_219_706_familias, total_familias),
+        "renda_acima_706_familias": renda_acima_706_familias,
+        "renda_acima_706_pct": pct(renda_acima_706_familias, total_familias),
     }
 
 
