@@ -1,6 +1,7 @@
 import { useEffect, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import IngestaoPage from "./pages/IngestaoPage";
+import IndicadoresPage from "./pages/IndicadoresPage";
 import VigilanciaPage from "./pages/VigilanciaPage";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -65,6 +66,9 @@ function AppShell({
             <NavLink to="/vigilancia" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
               Dados vigilância
             </NavLink>
+            <NavLink to="/indicadores" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+              Indicadores
+            </NavLink>
           </nav>
           <button type="button" onClick={onLogout}>
             Sair
@@ -78,7 +82,6 @@ function AppShell({
 }
 
 function DashboardHome({
-  health,
   me,
   users,
   userError,
@@ -86,7 +89,6 @@ function DashboardHome({
   setNewUser,
   onCreateUser,
 }: {
-  health: HealthResponse | null;
   me: UserMe | null;
   users: UserMe[];
   userError: string;
@@ -96,31 +98,6 @@ function DashboardHome({
 }) {
   return (
     <>
-      <section className="cards">
-        <article className="card">
-          <h3>Usuários e perfis</h3>
-          <p>SuperAdmin, Gestor, Admin Local, Técnico e Consultivo</p>
-        </article>
-        <article className="card card-link">
-          <h3>Ingestão de dados</h3>
-          <p>Envio de CSV/XLSX para tabelas RAW (CADU, Bolsa Família, BPC, SIBEC).</p>
-          <NavLink to="/ingestao" className="card-cta">
-            Abrir página de ingestão →
-          </NavLink>
-        </article>
-        <article className="card card-link">
-          <h3>Dados vigilância</h3>
-          <p>Gerar views materializadas (ex.: base Família) após carregar os brutos.</p>
-          <NavLink to="/vigilancia" className="card-cta">
-            Abrir geração de visões →
-          </NavLink>
-        </article>
-        <article className="card">
-          <h3>Status da API</h3>
-          <p>{health?.status === "ok" ? "Online" : "Aguardando conexão"}</p>
-        </article>
-      </section>
-
       {me?.role === "superadmin" && (
         <section className="auth-card">
           <h2>Gestão de usuários</h2>
@@ -358,7 +335,6 @@ export default function App() {
               ) : (
                 <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
                   <DashboardHome
-                    health={health}
                     me={me}
                     users={users}
                     userError={userError}
@@ -376,6 +352,18 @@ export default function App() {
               token ? (
                 <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
                   <IngestaoPage token={token} />
+                </AppShell>
+              ) : (
+                <Navigate to="/" replace />
+              )
+            }
+          />
+          <Route
+            path="/indicadores"
+            element={
+              token ? (
+                <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
+                  <IndicadoresPage token={token} />
                 </AppShell>
               ) : (
                 <Navigate to="/" replace />

@@ -1,6 +1,7 @@
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -11,6 +12,72 @@ from ..vigilance.familia_mview import refresh_familia_mview
 from ..vigilance.pessoas_mview import refresh_pessoas_mview
 
 router = APIRouter(prefix="/vigilance", tags=["vigilance"])
+
+
+@router.get("/kpis")
+def get_vigilance_kpis(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """
+    KPIs iniciais da vigilância:
+    - total_familias (vig.mvw_familia)
+    - total_pessoas (vig.mvw_pessoas)
+    - total_homens / total_mulheres + percentual sobre total de pessoas
+    """
+    with db.bind.begin() as conn:
+        familias_exists = conn.execute(text("SELECT to_regclass('vig.mvw_familia')")).scalar()
+        pessoas_exists = conn.execute(text("SELECT to_regclass('vig.mvw_pessoas')")).scalar()
+        if not familias_exists or not pessoas_exists:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Views necessárias não encontradas. Gere primeiro vig.mvw_familia e vig.mvw_pessoas "
+                    "na página Dados vigilância."
+                ),
+            )
+
+        total_familias = int(conn.execute(text("SELECT COUNT(*) FROM vig.mvw_familia")).scalar() or 0)
+        total_pessoas = int(conn.execute(text("SELECT COUNT(*) FROM vig.mvw_pessoas")).scalar() or 0)
+
+        total_homens = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM vig.mvw_pessoas
+                    WHERE UPPER(COALESCE(cod_sexo, '')) IN ('1', 'M', 'MASCULINO')
+                    """
+                )
+            ).scalar()
+            or 0
+        )
+        total_mulheres = int(
+            conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM vig.mvw_pessoas
+                    WHERE UPPER(COALESCE(cod_sexo, '')) IN ('2', 'F', 'FEMININO')
+                    """
+                )
+            ).scalar()
+            or 0
+        )
+
+    def pct(value: int, total: int) -> float:
+        if total <= 0:
+            return 0.0
+        return round((value / total) * 100, 2)
+
+    return {
+        "total_familias": total_familias,
+        "total_pessoas": total_pessoas,
+        "total_homens": total_homens,
+        "pct_homens": pct(total_homens, total_pessoas),
+        "total_mulheres": total_mulheres,
+        "pct_mulheres": pct(total_mulheres, total_pessoas),
+    }
 
 
 @router.post("/materialized-views/familia/refresh")
