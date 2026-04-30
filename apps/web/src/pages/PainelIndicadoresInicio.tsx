@@ -25,6 +25,11 @@ type VigilanciaKpis = {
   renda_219_706_pct: number;
   renda_acima_706_familias: number;
   renda_acima_706_pct: number;
+  total_bpc: number;
+  total_bpc_idoso: number;
+  pct_bpc_idoso: number;
+  total_bpc_deficiente: number;
+  pct_bpc_deficiente: number;
 };
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -145,6 +150,25 @@ export default function PainelIndicadoresInicio({ token }: Props) {
               <small>Renda per capita acima de 706</small>
               <strong>{kpis.renda_acima_706_familias.toLocaleString("pt-BR")}</strong>
               <span>{kpis.renda_acima_706_pct.toLocaleString("pt-BR")} % das famílias do Cadastro Único</span>
+            </article>
+          </div>
+
+          <h2 className="kpi-section-title">BPC (ativos)</h2>
+          <div className="kpi-grid kpi-grid-3" aria-label="Indicadores de BPC">
+            <article className="kpi-card">
+              <small>Total de BPC ativos</small>
+              <strong>{kpis.total_bpc.toLocaleString("pt-BR")}</strong>
+              <span>Dados da folha BPC</span>
+            </article>
+            <article className="kpi-card">
+              <small>BPC Idoso</small>
+              <strong>{kpis.total_bpc_idoso.toLocaleString("pt-BR")}</strong>
+              <span>{kpis.pct_bpc_idoso.toLocaleString("pt-BR")} % do total de BPC ativo</span>
+            </article>
+            <article className="kpi-card">
+              <small>BPC Deficiente (inclui RMV)</small>
+              <strong>{kpis.total_bpc_deficiente.toLocaleString("pt-BR")}</strong>
+              <span>{kpis.pct_bpc_deficiente.toLocaleString("pt-BR")} % do total de BPC ativo</span>
             </article>
           </div>
         </>

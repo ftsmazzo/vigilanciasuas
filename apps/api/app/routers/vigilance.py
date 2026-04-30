@@ -14,6 +14,92 @@ from ..vigilance.pessoas_mview import refresh_pessoas_mview
 router = APIRouter(prefix="/vigilance", tags=["vigilance"])
 
 
+def _qi(ident: str) -> str:
+    return '"' + ident.replace('"', '""') + '"'
+
+
+def _pick_column(cols: set[str], candidates: tuple[str, ...]) -> str | None:
+    for c in candidates:
+        if c in cols:
+            return c
+    lower_map = {x.lower(): x for x in cols}
+    for c in candidates:
+        if c.lower() in lower_map:
+            return lower_map[c.lower()]
+    return None
+
+
+def _bpc_kpis_from_raw(conn) -> tuple[int, int, int]:
+    table_name = conn.execute(
+        text(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'raw'
+              AND table_name LIKE '%__beneficio_prestacao_continuada'
+            ORDER BY table_name
+            LIMIT 1
+            """
+        )
+    ).scalar()
+    if not table_name:
+        return 0, 0, 0
+
+    cols_rows = conn.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'raw' AND table_name = :t
+            """
+        ),
+        {"t": table_name},
+    ).all()
+    cols = {r[0] for r in cols_rows}
+    especie_col = _pick_column(cols, ("especie_ben", "especie_beneficio", "especie"))
+    situacao_col = _pick_column(cols, ("situacao", "status", "situacao_beneficio"))
+    ben_col = _pick_column(cols, ("numero_beneficio", "num_beneficio", "beneficio", "nb"))
+
+    if not especie_col:
+        return 0, 0, 0
+
+    situacao_filter = ""
+    if situacao_col:
+        situacao_filter = f"WHERE UPPER(COALESCE(b.{_qi(situacao_col)}::text, '')) = 'ATIVO'"
+
+    beneficio_expr = "NULL"
+    if ben_col:
+        beneficio_expr = f"NULLIF(regexp_replace(COALESCE(b.{_qi(ben_col)}::text, ''), '[^0-9]', '', 'g'), '')"
+
+    sql = f"""
+    WITH b AS (
+      SELECT * FROM raw.{_qi(table_name)} b
+      {situacao_filter}
+    ),
+    d AS (
+      SELECT
+        {beneficio_expr} AS beneficio_id,
+        UPPER(COALESCE(b.{_qi(especie_col)}::text, '')) AS especie_txt
+      FROM b
+    )
+    SELECT
+      COUNT(DISTINCT COALESCE(beneficio_id, especie_txt))::bigint AS total_bpc,
+      COUNT(DISTINCT CASE
+        WHEN especie_txt LIKE '%IDOSO%' THEN COALESCE(beneficio_id, especie_txt)
+      END)::bigint AS total_bpc_idoso,
+      COUNT(DISTINCT CASE
+        WHEN especie_txt LIKE '%DEFIC%' OR especie_txt LIKE '%RMV%' THEN COALESCE(beneficio_id, especie_txt)
+      END)::bigint AS total_bpc_deficiente
+    FROM d
+    """
+    row = conn.execute(text(sql)).mappings().first() or {}
+    return (
+        int(row.get("total_bpc") or 0),
+        int(row.get("total_bpc_idoso") or 0),
+        int(row.get("total_bpc_deficiente") or 0),
+    )
+
+
 @router.get("/kpis")
 def get_vigilance_kpis(
     db: Session = Depends(get_db),
@@ -84,6 +170,7 @@ def get_vigilance_kpis(
         bolsa = bolsa_folha_kpis_from_raw(conn)
         total_bolsa_familia = bolsa.total_familias_folha
         total_pago_bf = bolsa.total_pago
+        total_bpc, total_bpc_idoso, total_bpc_deficiente = _bpc_kpis_from_raw(conn)
 
         total_pessoas = int(conn.execute(text("SELECT COUNT(*) FROM vig.mvw_pessoas")).scalar() or 0)
 
@@ -140,6 +227,11 @@ def get_vigilance_kpis(
         "renda_219_706_pct": pct(renda_219_706_familias, total_familias),
         "renda_acima_706_familias": renda_acima_706_familias,
         "renda_acima_706_pct": pct(renda_acima_706_familias, total_familias),
+        "total_bpc": total_bpc,
+        "total_bpc_idoso": total_bpc_idoso,
+        "pct_bpc_idoso": pct(total_bpc_idoso, total_bpc),
+        "total_bpc_deficiente": total_bpc_deficiente,
+        "pct_bpc_deficiente": pct(total_bpc_deficiente, total_bpc),
     }
 
 
