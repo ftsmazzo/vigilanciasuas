@@ -1,7 +1,8 @@
 import { useEffect, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import IngestaoPage from "./pages/IngestaoPage";
-import IndicadoresPage from "./pages/IndicadoresPage";
+import PainelIndicadoresInicio from "./pages/PainelIndicadoresInicio";
+import UsuariosPage from "./pages/UsuariosPage";
 import VigilanciaPage from "./pages/VigilanciaPage";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -66,9 +67,11 @@ function AppShell({
             <NavLink to="/vigilancia" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
               Dados vigilância
             </NavLink>
-            <NavLink to="/indicadores" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-              Indicadores
-            </NavLink>
+            {me?.role === "superadmin" && (
+              <NavLink to="/usuarios" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+                Usuários
+              </NavLink>
+            )}
           </nav>
           <button type="button" onClick={onLogout}>
             Sair
@@ -81,82 +84,8 @@ function AppShell({
   );
 }
 
-function DashboardHome({
-  me,
-  users,
-  userError,
-  newUser,
-  setNewUser,
-  onCreateUser,
-}: {
-  me: UserMe | null;
-  users: UserMe[];
-  userError: string;
-  newUser: NewUserPayload;
-  setNewUser: Dispatch<SetStateAction<NewUserPayload>>;
-  onCreateUser: (e: FormEvent<HTMLFormElement>) => void;
-}) {
-  return (
-    <>
-      {me?.role === "superadmin" && (
-        <section className="auth-card">
-          <h2>Gestão de usuários</h2>
-          <form onSubmit={onCreateUser} className="auth-form">
-            <label>
-              Nome
-              <input
-                type="text"
-                value={newUser.name}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, name: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Email
-              <input
-                type="email"
-                value={newUser.email}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, email: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Senha
-              <input
-                type="password"
-                value={newUser.password}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, password: event.target.value }))}
-                required
-              />
-            </label>
-            <label>
-              Perfil
-              <select
-                value={newUser.role}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, role: event.target.value }))}
-              >
-                <option value="gestor">Gestor</option>
-                <option value="admin_local">Admin Local</option>
-                <option value="tecnico">Técnico</option>
-                <option value="consultivo">Consultivo</option>
-              </select>
-            </label>
-            <button type="submit">Criar usuário</button>
-          </form>
-          {userError && <p className="error">{userError}</p>}
-          <div className="users-list">
-            {users.map((user) => (
-              <div className="user-row" key={user.id}>
-                <strong>{user.name}</strong>
-                <span>{user.email}</span>
-                <span>{user.role}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-    </>
-  );
+function DashboardHome({ token }: { token: string }) {
+  return <PainelIndicadoresInicio token={token} />;
 }
 
 export default function App() {
@@ -334,14 +263,7 @@ export default function App() {
                 </>
               ) : (
                 <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
-                  <DashboardHome
-                    me={me}
-                    users={users}
-                    userError={userError}
-                    newUser={newUser}
-                    setNewUser={setNewUser}
-                    onCreateUser={handleCreateUser}
-                  />
+                  <DashboardHome token={token} />
                 </AppShell>
               )
             }
@@ -359,11 +281,18 @@ export default function App() {
             }
           />
           <Route
-            path="/indicadores"
+            path="/usuarios"
             element={
               token ? (
                 <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
-                  <IndicadoresPage token={token} />
+                  <UsuariosPage
+                    me={me}
+                    users={users}
+                    userError={userError}
+                    newUser={newUser}
+                    setNewUser={setNewUser}
+                    onCreateUser={handleCreateUser}
+                  />
                 </AppShell>
               ) : (
                 <Navigate to="/" replace />

@@ -15,7 +15,8 @@ type VigilanciaKpis = {
   pct_mulheres: number;
 };
 
-export default function IndicadoresPage({ token }: Props) {
+/** Painel de KPIs exibido na página Início (dados Cadastro Único). */
+export default function PainelIndicadoresInicio({ token }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [kpis, setKpis] = useState<VigilanciaKpis | null>(null);
@@ -53,8 +54,8 @@ export default function IndicadoresPage({ token }: Props) {
   return (
     <section className="kpi-page">
       <div className="kpi-head">
-        <h1>Indicadores iniciais</h1>
-        <p>Primeiros dados reais da vigilância a partir das views materializadas.</p>
+        <h1>Indicadores</h1>
+        <p>Totais consolidados a partir do Cadastro Único (CECAD).</p>
         <button type="button" onClick={() => void loadKpis()} disabled={loading}>
           {loading ? "Atualizando..." : "Atualizar indicadores"}
         </button>
@@ -63,26 +64,30 @@ export default function IndicadoresPage({ token }: Props) {
       {error && <p className="error">{error}</p>}
 
       {!error && kpis && (
-        <div className="kpi-grid" aria-label="Indicadores de vigilância">
+        <div className="kpi-grid" aria-label="Indicadores do Cadastro Único">
           <article className="kpi-card">
             <small>Total de famílias</small>
             <strong>{kpis.total_familias.toLocaleString("pt-BR")}</strong>
-            <span>Base: vig.mvw_familia</span>
+            <span>Dados Cadastro Único — famílias</span>
           </article>
           <article className="kpi-card">
             <small>Total de pessoas</small>
             <strong>{kpis.total_pessoas.toLocaleString("pt-BR")}</strong>
-            <span>Base: vig.mvw_pessoas</span>
+            <span>Dados Cadastro Único — pessoas</span>
           </article>
           <article className="kpi-card">
             <small>Total de homens</small>
             <strong>{kpis.total_homens.toLocaleString("pt-BR")}</strong>
-            <span>{kpis.pct_homens.toLocaleString("pt-BR")} % do total bruto</span>
+            <span>
+              {kpis.pct_homens.toLocaleString("pt-BR")} % do total de pessoas (Cadastro Único)
+            </span>
           </article>
           <article className="kpi-card">
             <small>Total de mulheres</small>
             <strong>{kpis.total_mulheres.toLocaleString("pt-BR")}</strong>
-            <span>{kpis.pct_mulheres.toLocaleString("pt-BR")} % do total bruto</span>
+            <span>
+              {kpis.pct_mulheres.toLocaleString("pt-BR")} % do total de pessoas (Cadastro Único)
+            </span>
           </article>
         </div>
       )}
