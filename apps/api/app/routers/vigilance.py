@@ -347,6 +347,12 @@ def get_vigilance_kpis(
         round(total_pago_bf / total_bolsa_familia, 2) if total_bolsa_familia > 0 else 0.0
     )
 
+    n_fam_manut = int(manutencoes.get("familias_distintas") or 0)
+    manutencoes = {
+        **manutencoes,
+        "pct_familias_manutencao_sobre_cadu": pct(n_fam_manut, total_familias),
+    }
+
     return {
         "total_familias": total_familias,
         "total_pessoas": total_pessoas,
