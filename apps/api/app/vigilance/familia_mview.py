@@ -287,23 +287,19 @@ def _cadu_col_expr(cols: set[str], key: str) -> str:
     return "NULL"
 
 
-def build_familia_mview_sql(
+def _build_pbf_agg_subquery(
     *,
-    cadu_cols: set[str],
     pbf_cod: str | None,
     pbf_valor: str | None,
     pbf_ref: str | None,
 ) -> str:
-    c = _cadu_required_columns()
-
-    def qc(key: str) -> str:
-        return f"{_cadu_col_expr(cadu_cols, key)}::text"
-
-    pbf_subquery = (
-        "SELECT NULL::text AS codigo_familiar, NULL::numeric AS vlrtotal, "
-        "NULL::boolean AS na_folha_pbf WHERE false"
-    )
-    if pbf_cod and pbf_valor:
+    """CTE `pbf_agg`: uma linha por código familiar na folha PBF (mesma lógica da `vig.mvw_familia`)."""
+    if not pbf_cod:
+        return (
+            "SELECT NULL::text AS codigo_familiar, NULL::numeric AS vlrtotal, "
+            "NULL::boolean AS na_folha_pbf WHERE false"
+        )
+    if pbf_valor:
         ref_filter = ""
         if pbf_ref:
             ref_filter = f""" WHERE (
@@ -317,7 +313,7 @@ def build_familia_mview_sql(
                 WHERE {_qi(pbf_ref)} IS NOT NULL AND btrim({_qi(pbf_ref)}::text) <> ''
               )
             ) """
-        pbf_subquery = f"""
+        return f"""
         SELECT
           vig.norm_familia_cod({_qi(pbf_cod)}::text) AS codigo_familiar,
           SUM(COALESCE(vig.parse_money_br({_qi(pbf_valor)}::text), 0))::numeric(14,2) AS vlrtotal,
@@ -327,8 +323,7 @@ def build_familia_mview_sql(
         GROUP BY 1
         HAVING vig.norm_familia_cod({_qi(pbf_cod)}::text) IS NOT NULL
         """
-    elif pbf_cod and not pbf_valor:
-        pbf_subquery = f"""
+    return f"""
         SELECT DISTINCT ON (vig.norm_familia_cod({_qi(pbf_cod)}::text))
           vig.norm_familia_cod({_qi(pbf_cod)}::text) AS codigo_familiar,
           NULL::numeric AS vlrtotal,
@@ -337,6 +332,56 @@ def build_familia_mview_sql(
         WHERE vig.norm_familia_cod({_qi(pbf_cod)}::text) IS NOT NULL
         ORDER BY vig.norm_familia_cod({_qi(pbf_cod)}::text)
         """
+
+
+@dataclass
+class BolsaFolhaKpis:
+    """Totais direto da folha em `raw`, sem filtrar pelo universo CADU."""
+
+    total_familias_folha: int
+    total_pago: float
+
+
+def bolsa_folha_kpis_from_raw(conn: Connection) -> BolsaFolhaKpis:
+    """Contagem de famílias distintas e soma de valores na folha PBF (última competência quando houver coluna)."""
+    ensure_vig_functions(conn)
+    if not _table_exists(conn, "raw", PBF_TABLE):
+        return BolsaFolhaKpis(0, 0.0)
+    cols = _columns(conn, "raw", PBF_TABLE)
+    pbf_cod = _pick_column(cols, PBF_COD_CANDIDATES)
+    pbf_valor = _pick_column(cols, PBF_VALOR_CANDIDATES)
+    pbf_ref = _pick_column(cols, PBF_REF_CANDIDATES)
+    inner = _build_pbf_agg_subquery(pbf_cod=pbf_cod, pbf_valor=pbf_valor, pbf_ref=pbf_ref)
+    sql = f"""
+    WITH pbf_agg AS (
+      {inner}
+    )
+    SELECT
+      COUNT(*)::bigint AS n_bf,
+      COALESCE(SUM(vlrtotal), 0)::numeric AS total_pago
+    FROM pbf_agg
+    """
+    row = conn.execute(text(sql)).mappings().first()
+    fr = row or {}
+    return BolsaFolhaKpis(
+        total_familias_folha=int(fr.get("n_bf") or 0),
+        total_pago=float(fr.get("total_pago") or 0),
+    )
+
+
+def build_familia_mview_sql(
+    *,
+    cadu_cols: set[str],
+    pbf_cod: str | None,
+    pbf_valor: str | None,
+    pbf_ref: str | None,
+) -> str:
+    c = _cadu_required_columns()
+
+    def qc(key: str) -> str:
+        return f"{_cadu_col_expr(cadu_cols, key)}::text"
+
+    pbf_subquery = _build_pbf_agg_subquery(pbf_cod=pbf_cod, pbf_valor=pbf_valor, pbf_ref=pbf_ref)
 
     # Endereço: tipos + título + logradouro, sanitizado
     endereco_expr = f"""vig.clean_spaces(

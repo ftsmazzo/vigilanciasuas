@@ -8,7 +8,7 @@ from ..db import get_db
 from ..deps import get_current_user
 from ..models import User
 from ..vigilance.domicilio_mview import refresh_domicilio_mview
-from ..vigilance.familia_mview import refresh_familia_mview
+from ..vigilance.familia_mview import bolsa_folha_kpis_from_raw, refresh_familia_mview
 from ..vigilance.pessoas_mview import refresh_pessoas_mview
 
 router = APIRouter(prefix="/vigilance", tags=["vigilance"])
@@ -24,7 +24,8 @@ def get_vigilance_kpis(
     - total_familias (vig.mvw_familia)
     - total_pessoas (vig.mvw_pessoas)
     - total_homens / total_mulheres + percentual sobre total de pessoas
-    - Bolsa Família e TAC (vig.mvw_familia + folha PBF quando houver)
+    - Bolsa Família: contagem e valores direto de raw.sibec__programa_bolsa_familia (igual agregação da MV).
+    - % Bolsa sobre CADU: usa total_familias da vig.mvw_familia; TAC continua na MV.
     """
     with db.bind.begin() as conn:
         familias_exists = conn.execute(text("SELECT to_regclass('vig.mvw_familia')")).scalar()
@@ -43,23 +44,20 @@ def get_vigilance_kpis(
                 """
                 SELECT
                   COUNT(*)::bigint AS n_fam,
-                  COUNT(*) FILTER (WHERE marc_pbf IS TRUE)::bigint AS n_bf,
                   COUNT(*) FILTER (
                     WHERE meses_desatualizado IS NOT NULL AND meses_desatualizado <= 24
-                  )::bigint AS n_tac,
-                  COALESCE(
-                    SUM(vlrtotal) FILTER (WHERE marc_pbf IS TRUE),
-                    0::numeric
-                  ) AS total_pago_bf
+                  )::bigint AS n_tac
                 FROM vig.mvw_familia
                 """
             )
         ).mappings().first()
         fr = fam_row or {}
         total_familias = int(fr.get("n_fam") or 0)
-        total_bolsa_familia = int(fr.get("n_bf") or 0)
         tac_familias = int(fr.get("n_tac") or 0)
-        total_pago_bf = float(fr.get("total_pago_bf") or 0)
+
+        bolsa = bolsa_folha_kpis_from_raw(conn)
+        total_bolsa_familia = bolsa.total_familias_folha
+        total_pago_bf = bolsa.total_pago
 
         total_pessoas = int(conn.execute(text("SELECT COUNT(*) FROM vig.mvw_pessoas")).scalar() or 0)
 
