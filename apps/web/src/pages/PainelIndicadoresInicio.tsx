@@ -73,30 +73,27 @@ export default function PainelIndicadoresInicio({ token }: Props) {
 
       {!error && kpis && (
         <>
+          <h2 className="kpi-section-title">Famílias e Pessoas</h2>
           <div className="kpi-grid" aria-label="Indicadores do Cadastro Único">
             <article className="kpi-card">
               <small>Total de famílias</small>
               <strong>{kpis.total_familias.toLocaleString("pt-BR")}</strong>
-              <span>Dados Cadastro Único — famílias</span>
+              <span>Dados Cadastro Único — Família</span>
             </article>
             <article className="kpi-card">
               <small>Total de pessoas</small>
               <strong>{kpis.total_pessoas.toLocaleString("pt-BR")}</strong>
-              <span>Dados Cadastro Único — pessoas</span>
+              <span>Dados Cadastro Único — Pessoa</span>
             </article>
             <article className="kpi-card">
               <small>Total de homens</small>
               <strong>{kpis.total_homens.toLocaleString("pt-BR")}</strong>
-              <span>
-                {kpis.pct_homens.toLocaleString("pt-BR")} % do total de pessoas (Cadastro Único)
-              </span>
+              <span>{kpis.pct_homens.toLocaleString("pt-BR")} % (Cadastro Único)</span>
             </article>
             <article className="kpi-card">
               <small>Total de mulheres</small>
               <strong>{kpis.total_mulheres.toLocaleString("pt-BR")}</strong>
-              <span>
-                {kpis.pct_mulheres.toLocaleString("pt-BR")} % do total de pessoas (Cadastro Único)
-              </span>
+              <span>{kpis.pct_mulheres.toLocaleString("pt-BR")} % (Cadastro Único)</span>
             </article>
           </div>
 
