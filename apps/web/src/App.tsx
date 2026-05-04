@@ -33,54 +33,58 @@ type NewUserPayload = {
 };
 
 function AppShell({
-  token,
   loadingMe,
   me,
   onLogout,
   children,
 }: {
-  token: string;
   loadingMe: boolean;
   me: UserMe | null;
   onLogout: () => void;
   children: ReactNode;
 }) {
   return (
-    <>
-      <header className="hero">
-        <h1>VigSocial</h1>
-        <p>Painel inicial da Vigilância Socioassistencial</p>
-      </header>
-
-      <section className="session-bar">
-        <div>
-          {loadingMe ? "Carregando sessão…" : `Logado como ${me?.name} (${me?.role})`}
+    <div className="shell">
+      <header className="shell-header fx-glass">
+        <div className="shell-brand">
+          <span className="shell-logo" aria-hidden>
+            VS
+          </span>
+          <div className="shell-brand-text">
+            <strong className="shell-title">VigSocial</strong>
+            <span className="shell-tagline">Vigilância socioassistencial</span>
+          </div>
         </div>
-        <div className="session-actions">
-          <nav className="main-nav" aria-label="Principal">
-            <NavLink to="/" end className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-              Início
+
+        <nav className="main-nav shell-nav" aria-label="Principal">
+          <NavLink to="/" end className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+            Início
+          </NavLink>
+          <NavLink to="/ingestao" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+            Ingestão
+          </NavLink>
+          <NavLink to="/vigilancia" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+            Vigilância
+          </NavLink>
+          {me?.role === "superadmin" && (
+            <NavLink to="/usuarios" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+              Usuários
             </NavLink>
-            <NavLink to="/ingestao" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-              Ingestão de dados
-            </NavLink>
-            <NavLink to="/vigilancia" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-              Dados vigilância
-            </NavLink>
-            {me?.role === "superadmin" && (
-              <NavLink to="/usuarios" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-                Usuários
-              </NavLink>
-            )}
-          </nav>
-          <button type="button" onClick={onLogout}>
+          )}
+        </nav>
+
+        <div className="shell-user">
+          <span className="shell-session">
+            {loadingMe ? "Carregando sessão…" : `${me?.name ?? "—"} · ${me?.role ?? ""}`}
+          </span>
+          <button type="button" className="btn btn-ghost" onClick={onLogout}>
             Sair
           </button>
         </div>
-      </section>
+      </header>
 
-      {children}
-    </>
+      <main className="shell-main">{children}</main>
+    </div>
   );
 }
 
@@ -218,51 +222,67 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <main className="page">
+      <div className="app-viewport">
         <Routes>
           <Route
             path="/"
             element={
               !token ? (
-                <>
-                  <header className="hero">
-                    <h1>VigSocial</h1>
-                    <p>Painel inicial da Vigilância Socioassistencial</p>
-                  </header>
-                  <section className="auth-card">
-                    <h2>Entrar</h2>
-                    <form onSubmit={handleLogin} className="auth-form">
-                      <label>
-                        Email
-                        <input
-                          type="email"
-                          value={email}
-                          onChange={(event) => setEmail(event.target.value)}
-                          required
-                        />
-                      </label>
-                      <label>
-                        Senha
-                        <input
-                          type="password"
-                          value={password}
-                          onChange={(event) => setPassword(event.target.value)}
-                          required
-                        />
-                      </label>
-                      <button type="submit">Entrar</button>
-                    </form>
-                    {authError && <p className="error">{authError}</p>}
-                  </section>
-                  <section className="cards">
-                    <article className="card">
-                      <h3>Vigilância socioassistencial</h3>
-                      <p>Faça login para acessar o painel e a ingestão de dados.</p>
-                    </article>
-                  </section>
-                </>
+                <main className="page page--login">
+                  <div className="login-bg" aria-hidden />
+                  <div className="login-grid">
+                    <div className="login-brand">
+                      <div className="login-badge">
+                        <span className="login-badge-chip">VS</span>
+                        <span>Vigilância socioassistencial</span>
+                      </div>
+                      <h1 className="login-title">
+                        Diagnóstico e dados em{" "}
+                        <span className="fx-accent-word">um só lugar</span>
+                      </h1>
+                      <p className="login-lead">
+                        Painel da vigilância socioassistencial com ingestão do Cadastro Único e bases correlatas.
+                      </p>
+                      <ul className="login-points">
+                        <li>Indicadores e manutenções</li>
+                        <li>Ingestão segura de arquivos</li>
+                        <li>Visões materializadas para análise</li>
+                      </ul>
+                    </div>
+                    <section className="auth-card fx-card fx-card--lift">
+                      <h2 className="fx-card-title">Entrar</h2>
+                      <p className="fx-card-sub">Use o email e a senha fornecidos pelo administrador.</p>
+                      <form onSubmit={handleLogin} className="auth-form">
+                        <label>
+                          Email
+                          <input
+                            type="email"
+                            value={email}
+                            onChange={(event) => setEmail(event.target.value)}
+                            required
+                            autoComplete="username"
+                          />
+                        </label>
+                        <label>
+                          Senha
+                          <input
+                            type="password"
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            required
+                            autoComplete="current-password"
+                          />
+                        </label>
+                        <button type="submit" className="btn btn-primary">
+                          Entrar
+                        </button>
+                      </form>
+                      {authError && <p className="error">{authError}</p>}
+                    </section>
+                  </div>
+                </main>
               ) : (
-                <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
+                <AppShell loadingMe={loadingMe} me={me} onLogout={handleLogout}>
                   <DashboardHome token={token} />
                 </AppShell>
               )
@@ -272,7 +292,7 @@ export default function App() {
             path="/ingestao"
             element={
               token ? (
-                <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
+                <AppShell loadingMe={loadingMe} me={me} onLogout={handleLogout}>
                   <IngestaoPage token={token} />
                 </AppShell>
               ) : (
@@ -284,7 +304,7 @@ export default function App() {
             path="/usuarios"
             element={
               token ? (
-                <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
+                <AppShell loadingMe={loadingMe} me={me} onLogout={handleLogout}>
                   <UsuariosPage
                     me={me}
                     users={users}
@@ -303,7 +323,7 @@ export default function App() {
             path="/vigilancia"
             element={
               token ? (
-                <AppShell token={token} loadingMe={loadingMe} me={me} onLogout={handleLogout}>
+                <AppShell loadingMe={loadingMe} me={me} onLogout={handleLogout}>
                   <VigilanciaPage token={token} />
                 </AppShell>
               ) : (
@@ -313,7 +333,7 @@ export default function App() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </main>
+      </div>
     </BrowserRouter>
   );
 }

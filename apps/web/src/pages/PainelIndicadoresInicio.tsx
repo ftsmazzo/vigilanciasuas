@@ -127,10 +127,10 @@ export default function PainelIndicadoresInicio({ token }: Props) {
 
   return (
     <section className="kpi-page">
-      <div className="kpi-head">
+      <div className="kpi-head fx-card">
         <h1>Indicadores</h1>
         <p>Cadastro Único (CECAD) e folha Bolsa Família.</p>
-        <button type="button" onClick={() => void loadKpis()} disabled={loading}>
+        <button type="button" className="btn btn-secondary" onClick={() => void loadKpis()} disabled={loading}>
           {loading ? "Atualizando..." : "Atualizar indicadores"}
         </button>
       </div>

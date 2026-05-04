@@ -35,7 +35,7 @@ export default function UsuariosPage({ me, users, userError, newUser, setNewUser
         <h1>Usuários</h1>
         <p>Criação de contas e perfis de acesso ao VigSocial.</p>
       </div>
-      <section className="auth-card">
+      <section className="auth-card fx-card">
         <h2>Gestão de usuários</h2>
         <form onSubmit={onCreateUser} className="auth-form">
           <label>
