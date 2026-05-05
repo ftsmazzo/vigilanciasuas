@@ -421,7 +421,7 @@ export default function IngestaoPage({ token }: Props) {
   function bulkGeoThresholds(): { sim_media_min: number; sim_outro_cep_min: number } {
     const pr = geoReport?.parametros_relatorio as Record<string, unknown> | undefined;
     const sm = typeof pr?.sim_media_min === "number" ? pr.sim_media_min : 0.35;
-    const so = typeof pr?.sim_outro_cep_min === "number" ? pr.sim_outro_cep_min : 0.48;
+    const so = typeof pr?.sim_outro_cep_min === "number" ? pr.sim_outro_cep_min : 0.6;
     return { sim_media_min: sm, sim_outro_cep_min: so };
   }
 

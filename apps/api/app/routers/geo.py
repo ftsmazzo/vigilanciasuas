@@ -244,7 +244,7 @@ class BulkOutroCepBody(BaseModel):
     """Cruzamento completo no servidor (todas as famílias elegíveis): prévia ou gravação em uma única transação."""
 
     sim_media_min: float = Field(0.35, ge=0.0, le=1.0)
-    sim_outro_cep_min: float = Field(0.48, ge=0.0, le=1.0)
+    sim_outro_cep_min: float = Field(0.6, ge=0.0, le=1.0)
     dry_run: bool = Field(True, description="Se true, só contagem; se false, aplica UPDATE no CADU RAW.")
 
 
@@ -476,10 +476,10 @@ def geo_cep_match_report(
         description="Limiar entre faixa média e baixa; elegibilidade 'outro CEP' usa sim_mesmo_cep < este valor.",
     ),
     sim_outro_cep_min: float = Query(
-        0.48,
+        0.6,
         ge=0.0,
         le=1.0,
-        description="Mínimo de similaridade média para incluir candidato em outro CEP na amostra.",
+        description="Mínimo de sim_outro_cep para amostra e trocas (padrão 0,6).",
     ),
     amostra_pool: int = Query(
         120,
@@ -515,7 +515,7 @@ def geo_cep_match_report(
     Ordem sugerida de saneamento: conferir CEP quando `sim_mesmo_cep` for baixa ou houver candidato
     `cep_sugerido` forte; depois ajustar grafia do logradouro/bairro.
 
-    Limiares padrão: `sim_alta_min=0.65`, `sim_media_min=0.35`, `sim_outro_cep_min=0.48` (sobrescreva via query).
+    Limiares padrão: `sim_alta_min=0.65`, `sim_media_min=0.35`, `sim_outro_cep_min=0.6` (sobrescreva via query).
 
     Para milhares de famílias, use `POST /geo/bulk-apply-outro-cep` (prévia + um único UPDATE no servidor).
     """
