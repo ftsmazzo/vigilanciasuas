@@ -20,6 +20,135 @@ CADU_TABLE = "cecad__cadu"
 GEO_TABLE = "geo__tbl_geo"
 
 
+def _geo_fam_pipeline_ctes() -> str:
+    """fam_base → fam_sim (reutilizado no relatório e no cruzamento 'outro CEP')."""
+    return f"""
+        fam_base AS (
+          SELECT
+            t.id,
+            vig.norm_familia_cod(t.d_cod_familiar_fam::text) AS cod_fam,
+            vig.norm_cep(t.d_num_cep_logradouro_fam::text) AS cep_n,
+            NULLIF(btrim(t.d_nom_logradouro_fam::text), '') AS logra_raw,
+            NULLIF(btrim(t.d_nom_localidade_fam::text), '') AS bairro_raw
+          FROM raw.{_qi(CADU_TABLE)} AS t
+          WHERE t.d_cod_familiar_fam IS NOT NULL
+            AND btrim(t.d_cod_familiar_fam::text) <> ''
+        ),
+        fam AS (
+          SELECT DISTINCT ON (cod_fam)
+            cod_fam, cep_n, logra_raw, bairro_raw
+          FROM fam_base
+          WHERE cod_fam IS NOT NULL
+          ORDER BY cod_fam, id DESC
+        ),
+        geo_cep_counts AS (
+          SELECT cep_norm, count(*)::bigint AS n
+          FROM raw.{_qi(GEO_TABLE)}
+          GROUP BY cep_norm
+        ),
+        fam_enriched AS (
+          SELECT f.cod_fam, f.cep_n, f.logra_raw, f.bairro_raw, COALESCE(c.n, 0::bigint) AS n_geo_por_cep
+          FROM fam f
+          LEFT JOIN geo_cep_counts c ON c.cep_norm = f.cep_n
+        ),
+        fam_sim AS (
+          SELECT
+            fe.*,
+            (
+              SELECT max(
+                (
+                  similarity(
+                    lower(coalesce(fe.logra_raw, '')),
+                    lower(coalesce(btrim(g.endereco::text), ''))
+                  )
+                  + similarity(
+                    lower(coalesce(fe.bairro_raw, '')),
+                    lower(coalesce(btrim(g.bairro::text), ''))
+                  )
+                ) / 2.0
+              )
+              FROM raw.{_qi(GEO_TABLE)} g
+              WHERE fe.cep_n IS NOT NULL
+                AND g.cep_norm = fe.cep_n
+            ) AS sim_mesmo_cep
+          FROM fam_enriched fe
+        )"""
+
+
+def _cte_fam_alvo_outro_cep_amostra() -> str:
+    return """
+        fam_alvo AS (
+          SELECT *
+          FROM fam_sim
+          WHERE cep_n IS NOT NULL
+            AND (logra_raw IS NOT NULL OR bairro_raw IS NOT NULL)
+            AND (
+              n_geo_por_cep = 0
+              OR (n_geo_por_cep >= 1 AND sim_mesmo_cep IS NOT NULL AND sim_mesmo_cep < :sim_media)
+            )
+          ORDER BY random()
+          LIMIT :amostra_pool
+        )"""
+
+
+def _cte_fam_alvo_outro_cep_todas() -> str:
+    return """
+        fam_alvo AS (
+          SELECT *
+          FROM fam_sim
+          WHERE cep_n IS NOT NULL
+            AND (logra_raw IS NOT NULL OR bairro_raw IS NOT NULL)
+            AND (
+              n_geo_por_cep = 0
+              OR (n_geo_por_cep >= 1 AND sim_mesmo_cep IS NOT NULL AND sim_mesmo_cep < :sim_media)
+            )
+        )"""
+
+
+def _cte_pares_melhor_outro_cep() -> str:
+    return f"""
+        pares AS (
+          SELECT
+            fa.cod_fam,
+            fa.cep_n AS cep_cadu,
+            fa.logra_raw,
+            fa.bairro_raw,
+            fa.n_geo_por_cep,
+            fa.sim_mesmo_cep,
+            g.cep_norm AS cep_candidato,
+            btrim(g.endereco::text) AS endereco_ref,
+            btrim(g.bairro::text) AS bairro_ref,
+            (
+              similarity(
+                lower(coalesce(fa.logra_raw, '')),
+                lower(coalesce(btrim(g.endereco::text), ''))
+              )
+              + similarity(
+                lower(coalesce(fa.bairro_raw, '')),
+                lower(coalesce(btrim(g.bairro::text), ''))
+              )
+            ) / 2.0 AS sim_outro_cep
+          FROM fam_alvo fa
+          INNER JOIN raw.{_qi(GEO_TABLE)} g
+            ON g.cep_norm IS DISTINCT FROM fa.cep_n
+        ),
+        melhor AS (
+          SELECT DISTINCT ON (cod_fam)
+            cod_fam,
+            cep_cadu,
+            logra_raw,
+            bairro_raw,
+            n_geo_por_cep,
+            sim_mesmo_cep,
+            cep_candidato,
+            endereco_ref,
+            bairro_ref,
+            sim_outro_cep
+          FROM pares
+          ORDER BY cod_fam, sim_outro_cep DESC
+        )"""
+
+
 def _qi(ident: str) -> str:
     return '"' + ident.replace('"', '""') + '"'
 
@@ -108,7 +237,15 @@ class CepCorrecaoItem(BaseModel):
 class ApplyCepCorrecoesBody(BaseModel):
     """Atualiza `d_num_cep_logradouro_fam` no CADU RAW para todas as linhas de cada código familiar."""
 
-    updates: list[CepCorrecaoItem] = Field(..., min_length=1, max_length=500)
+    updates: list[CepCorrecaoItem] = Field(..., min_length=1, max_length=50_000)
+
+
+class BulkOutroCepBody(BaseModel):
+    """Cruzamento completo no servidor (todas as famílias elegíveis): prévia ou gravação em uma única transação."""
+
+    sim_media_min: float = Field(0.35, ge=0.0, le=1.0)
+    sim_outro_cep_min: float = Field(0.48, ge=0.0, le=1.0)
+    dry_run: bool = Field(True, description="Se true, só contagem; se false, aplica UPDATE no CADU RAW.")
 
 
 @router.post("/apply-cep-suggestions")
@@ -177,15 +314,28 @@ def geo_apply_cep_suggestions(
             )
         merged[cod_n] = cep_n
 
-    sql_one = f"""
-    UPDATE raw.{_qi(CADU_TABLE)} AS c
-    SET d_num_cep_logradouro_fam = :cep_new
-    WHERE vig.norm_familia_cod(c.d_cod_familiar_fam::text) = :cod_fam
-    """
-    linhas = 0
+    db.execute(
+        text(
+            "CREATE TEMP TABLE _vig_cep_pairs (cod_fam text NOT NULL, cep_new text NOT NULL) "
+            "ON COMMIT DROP"
+        )
+    )
     for cod_n, cep_n in merged.items():
-        res = db.execute(text(sql_one), {"cod_fam": cod_n, "cep_new": cep_n})
-        linhas += res.rowcount or 0
+        db.execute(
+            text("INSERT INTO _vig_cep_pairs (cod_fam, cep_new) VALUES (:c, :e)"),
+            {"c": cod_n, "e": cep_n},
+        )
+    res = db.execute(
+        text(
+            f"""
+            UPDATE raw.{_qi(CADU_TABLE)} AS c
+            SET d_num_cep_logradouro_fam = p.cep_new
+            FROM _vig_cep_pairs AS p
+            WHERE vig.norm_familia_cod(c.d_cod_familiar_fam::text) = p.cod_fam
+            """
+        )
+    )
+    linhas = res.rowcount or 0
     db.commit()
 
     cods_list = list(merged.keys())
@@ -193,6 +343,119 @@ def geo_apply_cep_suggestions(
         "familias_unicas_atualizadas": len(cods_list),
         "linhas_cadu_atualizadas": linhas,
         "pares": [{"cod_fam": c, "cep_aplicado": merged[c]} for c in cods_list],
+    }
+
+
+def _geo_require_trgm(db: Session) -> None:
+    if not _ensure_vig_and_trgm(db):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="pg_trgm é obrigatório para esta operação. Execute CREATE EXTENSION pg_trgm;",
+        )
+
+
+@router.post("/bulk-apply-outro-cep")
+def geo_bulk_apply_outro_cep(
+    body: BulkOutroCepBody,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """
+    Todas as famílias elegíveis (CEP ausente na geo ou similaridade baixa no mesmo CEP): melhor linha em
+    **outro** CEP na tbl_geo. Com `dry_run=true`, devolve só contagens; com `dry_run=false`, um único
+    UPDATE no CADU RAW (pode demorar minutos em bases grandes).
+    """
+    if body.sim_media_min >= 1.0:
+        raise HTTPException(status_code=422, detail="sim_media_min deve ser < 1.")
+    if not _raw_table_exists(db, CADU_TABLE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tabela raw.cecad__cadu não encontrada.",
+        )
+    if not _raw_table_exists(db, GEO_TABLE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tabela raw.geo__tbl_geo não encontrada.",
+        )
+    gcols = _geo_columns(db)
+    for required in ("cep_norm", "endereco", "bairro"):
+        if required not in gcols:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Coluna obrigatória ausente em raw.{GEO_TABLE}: {required}",
+            )
+    cadu_cols = _cadu_columns(db)
+    if "d_cod_familiar_fam" not in cadu_cols or "d_num_cep_logradouro_fam" not in cadu_cols:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CADU RAW sem d_cod_familiar_fam ou d_num_cep_logradouro_fam.",
+        )
+
+    _geo_require_trgm(db)
+    db.execute(text("CREATE SCHEMA IF NOT EXISTS vig"))
+    ensure_vig_functions(db.connection())
+    db.execute(text("SET LOCAL statement_timeout TO '0'"))
+
+    pipeline_head = f"""WITH {_geo_fam_pipeline_ctes()},
+        {_cte_fam_alvo_outro_cep_todas()},
+        {_cte_pares_melhor_outro_cep()}"""
+
+    params = {"sim_media": body.sim_media_min, "sim_outro_cep_min": body.sim_outro_cep_min}
+
+    if body.dry_run:
+        sql_preview = f"""
+        {pipeline_head},
+        aplica AS (
+          SELECT cod_fam
+          FROM melhor
+          WHERE sim_outro_cep >= :sim_outro_cep_min
+        )
+        SELECT
+          (SELECT count(*)::bigint FROM aplica) AS familias_com_candidato,
+          (
+            SELECT count(*)::bigint
+            FROM raw.{_qi(CADU_TABLE)} AS c
+            INNER JOIN aplica AS a ON vig.norm_familia_cod(c.d_cod_familiar_fam::text) = a.cod_fam
+          ) AS linhas_cadu_que_seriam_atualizadas
+        """
+        prev = db.execute(text(sql_preview), params).mappings().first()
+        db.commit()
+        return {
+            "dry_run": True,
+            "familias_com_candidato": int(prev["familias_com_candidato"] or 0) if prev else 0,
+            "linhas_cadu_que_seriam_atualizadas": int(prev["linhas_cadu_que_seriam_atualizadas"] or 0)
+            if prev
+            else 0,
+            "sim_media_min": body.sim_media_min,
+            "sim_outro_cep_min": body.sim_outro_cep_min,
+        }
+
+    sql_apply = f"""
+    {pipeline_head},
+    aplica AS (
+      SELECT cod_fam, cep_candidato
+      FROM melhor
+      WHERE sim_outro_cep >= :sim_outro_cep_min
+    ),
+    exec_upd AS (
+      UPDATE raw.{_qi(CADU_TABLE)} AS c
+      SET d_num_cep_logradouro_fam = a.cep_candidato
+      FROM aplica AS a
+      WHERE vig.norm_familia_cod(c.d_cod_familiar_fam::text) = a.cod_fam
+      RETURNING c.id
+    )
+    SELECT
+      (SELECT count(*)::bigint FROM aplica) AS familias_com_candidato,
+      (SELECT count(*)::bigint FROM exec_upd) AS linhas_cadu_atualizadas
+    """
+    row = db.execute(text(sql_apply), params).mappings().first()
+    db.commit()
+    return {
+        "dry_run": False,
+        "familias_com_candidato": int(row["familias_com_candidato"] or 0) if row else 0,
+        "linhas_cadu_atualizadas": int(row["linhas_cadu_atualizadas"] or 0) if row else 0,
+        "sim_media_min": body.sim_media_min,
+        "sim_outro_cep_min": body.sim_outro_cep_min,
     }
 
 
@@ -221,14 +484,18 @@ def geo_cep_match_report(
     amostra_pool: int = Query(
         120,
         ge=1,
-        le=5000,
-        description="Quantidade máxima de famílias aleatórias consideradas no cruzamento com outro CEP.",
+        le=100_000,
+        description="Com todas_elegiveis_outro_cep=false: famílias aleatórias no pool do cruzamento outro CEP.",
     ),
     amostra_limite: int = Query(
         25,
-        ge=1,
-        le=500,
-        description="Máximo de linhas retornadas na amostra de suspeita de CEP errado.",
+        ge=0,
+        le=200_000,
+        description="Máximo de linhas na amostra JSON (0 = sem limite; use com cuidado no navegador).",
+    ),
+    todas_elegiveis_outro_cep: bool = Query(
+        False,
+        description="Se true, considera todas as famílias elegíveis no cruzamento (sem amostragem aleatória). Pode demorar.",
     ),
 ):
     """
@@ -249,6 +516,8 @@ def geo_cep_match_report(
     `cep_sugerido` forte; depois ajustar grafia do logradouro/bairro.
 
     Limiares padrão: `sim_alta_min=0.65`, `sim_media_min=0.35`, `sim_outro_cep_min=0.48` (sobrescreva via query).
+
+    Para milhares de famílias, use `POST /geo/bulk-apply-outro-cep` (prévia + um único UPDATE no servidor).
     """
     if sim_media_min >= sim_alta_min:
         raise HTTPException(
@@ -278,6 +547,8 @@ def geo_cep_match_report(
             )
 
     trgm_ok = _ensure_vig_and_trgm(db)
+    if todas_elegiveis_outro_cep and trgm_ok:
+        db.execute(text("SET LOCAL statement_timeout TO '0'"))
 
     # --- Bloco base (sempre)
     sql_base = f"""
@@ -351,56 +622,7 @@ def geo_cep_match_report(
     # --- Similaridade no mesmo CEP (múltiplas linhas na geo: MAX entre candidatos)
     if trgm_ok:
         sql_sim = f"""
-        WITH fam_base AS (
-          SELECT
-            t.id,
-            vig.norm_familia_cod(t.d_cod_familiar_fam::text) AS cod_fam,
-            vig.norm_cep(t.d_num_cep_logradouro_fam::text) AS cep_n,
-            NULLIF(btrim(t.d_nom_logradouro_fam::text), '') AS logra_raw,
-            NULLIF(btrim(t.d_nom_localidade_fam::text), '') AS bairro_raw
-          FROM raw.{_qi(CADU_TABLE)} AS t
-          WHERE t.d_cod_familiar_fam IS NOT NULL
-            AND btrim(t.d_cod_familiar_fam::text) <> ''
-        ),
-        fam AS (
-          SELECT DISTINCT ON (cod_fam)
-            cod_fam, cep_n, logra_raw, bairro_raw
-          FROM fam_base
-          WHERE cod_fam IS NOT NULL
-          ORDER BY cod_fam, id DESC
-        ),
-        geo_cep_counts AS (
-          SELECT cep_norm, count(*)::bigint AS n
-          FROM raw.{_qi(GEO_TABLE)}
-          GROUP BY cep_norm
-        ),
-        fam_enriched AS (
-          SELECT f.cod_fam, f.cep_n, f.logra_raw, f.bairro_raw, COALESCE(c.n, 0::bigint) AS n_geo_por_cep
-          FROM fam f
-          LEFT JOIN geo_cep_counts c ON c.cep_norm = f.cep_n
-        ),
-        fam_sim AS (
-          SELECT
-            fe.*,
-            (
-              SELECT max(
-                (
-                  similarity(
-                    lower(coalesce(fe.logra_raw, '')),
-                    lower(coalesce(btrim(g.endereco::text), ''))
-                  )
-                  + similarity(
-                    lower(coalesce(fe.bairro_raw, '')),
-                    lower(coalesce(btrim(g.bairro::text), ''))
-                  )
-                ) / 2.0
-              )
-              FROM raw.{_qi(GEO_TABLE)} g
-              WHERE fe.cep_n IS NOT NULL
-                AND g.cep_norm = fe.cep_n
-            ) AS sim_mesmo_cep
-          FROM fam_enriched fe
-        )
+        WITH {_geo_fam_pipeline_ctes()}
         SELECT
           count(*) FILTER (
             WHERE cep_n IS NOT NULL AND n_geo_por_cep >= 1 AND sim_mesmo_cep >= :sim_alta
@@ -475,125 +697,32 @@ def geo_cep_match_report(
 
     # --- Candidato em OUTRO CEP (amostra): CEP inexistente na geo OU match fraco no próprio CEP
     if trgm_ok:
-        sql_alt = f"""
-        WITH fam_base AS (
-          SELECT
-            t.id,
-            vig.norm_familia_cod(t.d_cod_familiar_fam::text) AS cod_fam,
-            vig.norm_cep(t.d_num_cep_logradouro_fam::text) AS cep_n,
-            NULLIF(btrim(t.d_nom_logradouro_fam::text), '') AS logra_raw,
-            NULLIF(btrim(t.d_nom_localidade_fam::text), '') AS bairro_raw
-          FROM raw.{_qi(CADU_TABLE)} AS t
-          WHERE t.d_cod_familiar_fam IS NOT NULL
-            AND btrim(t.d_cod_familiar_fam::text) <> ''
-        ),
-        fam AS (
-          SELECT DISTINCT ON (cod_fam)
-            cod_fam, cep_n, logra_raw, bairro_raw
-          FROM fam_base
-          WHERE cod_fam IS NOT NULL
-          ORDER BY cod_fam, id DESC
-        ),
-        geo_cep_counts AS (
-          SELECT cep_norm, count(*)::bigint AS n
-          FROM raw.{_qi(GEO_TABLE)}
-          GROUP BY cep_norm
-        ),
-        fam_enriched AS (
-          SELECT f.cod_fam, f.cep_n, f.logra_raw, f.bairro_raw, COALESCE(c.n, 0::bigint) AS n_geo_por_cep
-          FROM fam f
-          LEFT JOIN geo_cep_counts c ON c.cep_norm = f.cep_n
-        ),
-        fam_sim AS (
-          SELECT
-            fe.*,
-            (
-              SELECT max(
-                (
-                  similarity(
-                    lower(coalesce(fe.logra_raw, '')),
-                    lower(coalesce(btrim(g.endereco::text), ''))
-                  )
-                  + similarity(
-                    lower(coalesce(fe.bairro_raw, '')),
-                    lower(coalesce(btrim(g.bairro::text), ''))
-                  )
-                ) / 2.0
-              )
-              FROM raw.{_qi(GEO_TABLE)} g
-              WHERE fe.cep_n IS NOT NULL
-                AND g.cep_norm = fe.cep_n
-            ) AS sim_mesmo_cep
-          FROM fam_enriched fe
-        ),
-        fam_alvo AS (
-          SELECT *
-          FROM fam_sim
-          WHERE cep_n IS NOT NULL
-            AND (logra_raw IS NOT NULL OR bairro_raw IS NOT NULL)
-            AND (
-              n_geo_por_cep = 0
-              OR (n_geo_por_cep >= 1 AND sim_mesmo_cep IS NOT NULL AND sim_mesmo_cep < :sim_media)
-            )
-          ORDER BY random()
-          LIMIT :amostra_pool
-        ),
-        pares AS (
-          SELECT
-            fa.cod_fam,
-            fa.cep_n AS cep_cadu,
-            fa.logra_raw,
-            fa.bairro_raw,
-            fa.n_geo_por_cep,
-            fa.sim_mesmo_cep,
-            g.cep_norm AS cep_candidato,
-            btrim(g.endereco::text) AS endereco_ref,
-            btrim(g.bairro::text) AS bairro_ref,
-            (
-              similarity(
-                lower(coalesce(fa.logra_raw, '')),
-                lower(coalesce(btrim(g.endereco::text), ''))
-              )
-              + similarity(
-                lower(coalesce(fa.bairro_raw, '')),
-                lower(coalesce(btrim(g.bairro::text), ''))
-              )
-            ) / 2.0 AS sim_outro_cep
-          FROM fam_alvo fa
-          INNER JOIN raw.{_qi(GEO_TABLE)} g
-            ON g.cep_norm IS DISTINCT FROM fa.cep_n
-        ),
-        melhor AS (
-          SELECT DISTINCT ON (cod_fam)
-            cod_fam,
-            cep_cadu,
-            logra_raw,
-            bairro_raw,
-            n_geo_por_cep,
-            sim_mesmo_cep,
-            cep_candidato,
-            endereco_ref,
-            bairro_ref,
-            sim_outro_cep
-          FROM pares
-          ORDER BY cod_fam, sim_outro_cep DESC
+        fam_alvo_cte = (
+            _cte_fam_alvo_outro_cep_todas()
+            if todas_elegiveis_outro_cep
+            else _cte_fam_alvo_outro_cep_amostra()
         )
+        lim_sql = "" if amostra_limite == 0 else "LIMIT :amostra_limite"
+        sql_alt = f"""
+        WITH {_geo_fam_pipeline_ctes()},
+        {fam_alvo_cte},
+        {_cte_pares_melhor_outro_cep()}
         SELECT *
         FROM melhor
         WHERE sim_outro_cep >= :sim_outro_cep_min
         ORDER BY sim_outro_cep DESC
-        LIMIT :amostra_limite
+        {lim_sql}
         """
         try:
-            alt_rows = db.execute(
-                text(sql_alt),
-                {
-                    "sim_media": sim_media_min,
-                    "amostra_pool": amostra_pool,
-                    "sim_outro_cep_min": sim_outro_cep_min,
-                    "amostra_limite": amostra_limite,
-                },
-            ).mappings().all()
+            bind_alt: dict[str, Any] = {
+                "sim_media": sim_media_min,
+                "sim_outro_cep_min": sim_outro_cep_min,
+            }
+            if not todas_elegiveis_outro_cep:
+                bind_alt["amostra_pool"] = amostra_pool
+            if amostra_limite > 0:
+                bind_alt["amostra_limite"] = amostra_limite
+            alt_rows = db.execute(text(sql_alt), bind_alt).mappings().all()
             out["amostra_suspeita_cep_errado_outro_cep_mais_parecido"] = [
                 _serialize_row(dict(r)) for r in alt_rows
             ]
@@ -607,6 +736,7 @@ def geo_cep_match_report(
         "sim_outro_cep_min": sim_outro_cep_min,
         "amostra_pool": amostra_pool,
         "amostra_limite": amostra_limite,
+        "todas_elegiveis_outro_cep": todas_elegiveis_outro_cep,
     }
     out["metodologia"] = {
         "mesmo_cep": (
@@ -629,10 +759,19 @@ def geo_cep_match_report(
             ),
         },
         "outro_cep": (
-            f"Amostra (até {amostra_pool} famílias aleatórias elegíveis; até {amostra_limite} linhas na resposta): "
-            "entre linhas da geo com CEP diferente do CADU, a maior similaridade de texto. "
-            f"Inclusão na lista quando sim_outro_cep >= {_fmt_pt_threshold(sim_outro_cep_min)}. "
-            "Se sim_outro_cep é alto e sim_mesmo_cep era baixo, priorize revisar o CEP."
+            (
+                "Todas as famílias elegíveis no cruzamento; "
+                if todas_elegiveis_outro_cep
+                else f"Até {amostra_pool} famílias aleatórias elegíveis; "
+            )
+            + (
+                "sem limite de linhas na resposta JSON. "
+                if amostra_limite == 0
+                else f"até {amostra_limite} linhas na resposta. "
+            )
+            + " Entre linhas da geo com CEP diferente do CADU, a maior similaridade de texto. "
+            f"Inclusão quando sim_outro_cep >= {_fmt_pt_threshold(sim_outro_cep_min)}. "
+            "Para aplicar milhares de correções de uma vez, use POST /api/v1/geo/bulk-apply-outro-cep."
         ),
         "ordem_saneamento_sugerida": (
             "1) Conferir CEP quando sim_mesmo_cep baixa ou cep ausente na geo mas candidato forte em outro CEP; "

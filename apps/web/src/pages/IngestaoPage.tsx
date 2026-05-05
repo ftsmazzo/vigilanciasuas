@@ -220,6 +220,11 @@ export default function IngestaoPage({ token }: Props) {
   const [geoReport, setGeoReport] = useState<Record<string, unknown> | null>(null);
   const [geoReportLoading, setGeoReportLoading] = useState(false);
   const [geoReportError, setGeoReportError] = useState("");
+  const [geoRepTodasElegiveis, setGeoRepTodasElegiveis] = useState(false);
+  const [geoRepLimite, setGeoRepLimite] = useState(5000);
+  const [geoBulkLoading, setGeoBulkLoading] = useState(false);
+  const [geoBulkStatus, setGeoBulkStatus] = useState("");
+  const [geoBulkLastPreview, setGeoBulkLastPreview] = useState<{ fam: number; lin: number } | null>(null);
   const [geoCepApplyLoading, setGeoCepApplyLoading] = useState(false);
   const [geoCepApplyStatus, setGeoCepApplyStatus] = useState("");
 
@@ -384,12 +389,15 @@ export default function IngestaoPage({ token }: Props) {
     }
   }
 
-  async function loadGeoReport() {
+  const loadGeoReport = useCallback(async () => {
     setGeoReportError("");
     setGeoReport(null);
     setGeoReportLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/v1/geo/match-report`, {
+      const q = new URLSearchParams();
+      q.set("todas_elegiveis_outro_cep", geoRepTodasElegiveis ? "true" : "false");
+      q.set("amostra_limite", String(geoRepLimite));
+      const res = await fetch(`${API_URL}/api/v1/geo/match-report?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & { detail?: unknown };
@@ -407,6 +415,105 @@ export default function IngestaoPage({ token }: Props) {
       setGeoReportError(err instanceof Error ? err.message : "Erro ao consultar relatório.");
     } finally {
       setGeoReportLoading(false);
+    }
+  }, [token, geoRepTodasElegiveis, geoRepLimite]);
+
+  function bulkGeoThresholds(): { sim_media_min: number; sim_outro_cep_min: number } {
+    const pr = geoReport?.parametros_relatorio as Record<string, unknown> | undefined;
+    const sm = typeof pr?.sim_media_min === "number" ? pr.sim_media_min : 0.35;
+    const so = typeof pr?.sim_outro_cep_min === "number" ? pr.sim_outro_cep_min : 0.48;
+    return { sim_media_min: sm, sim_outro_cep_min: so };
+  }
+
+  async function geoBulkPreview() {
+    setGeoBulkStatus("");
+    setGeoBulkLoading(true);
+    try {
+      const th = bulkGeoThresholds();
+      const res = await fetch(`${API_URL}/api/v1/geo/bulk-apply-outro-cep`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...th, dry_run: true }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & { detail?: unknown };
+      if (!res.ok) {
+        const msg =
+          typeof data.detail === "string"
+            ? data.detail
+            : Array.isArray(data.detail)
+              ? JSON.stringify(data.detail)
+              : "Falha na prévia em massa.";
+        throw new Error(msg);
+      }
+      const fam = Number(data.familias_com_candidato ?? 0);
+      const lin = Number(data.linhas_cadu_que_seriam_atualizadas ?? 0);
+      setGeoBulkLastPreview({ fam, lin });
+      setGeoBulkStatus(
+        `Prévia: ${fam.toLocaleString("pt-BR")} família(s) com candidato; ${lin.toLocaleString("pt-BR")} linha(s) no CADU seriam atualizadas (uma consulta no servidor).`
+      );
+    } catch (err) {
+      setGeoBulkLastPreview(null);
+      setGeoBulkStatus(err instanceof Error ? err.message : "Erro na prévia em massa.");
+    } finally {
+      setGeoBulkLoading(false);
+    }
+  }
+
+  async function geoBulkApply() {
+    const th = bulkGeoThresholds();
+    const prev = geoBulkLastPreview;
+    const ok = window.confirm(
+      prev
+        ? `Confirmar: aplicar CEP candidato da geo em ${prev.fam.toLocaleString("pt-BR")} família(s) ` +
+            `(${prev.lin.toLocaleString("pt-BR")} linha(s) em raw.cecad__cadu), com sim_media_min=${th.sim_media_min} e sim_outro_cep_min=${th.sim_outro_cep_min}? Sem desfazer automático.`
+        : `Aplicar correções em massa no CADU (sem prévia recente). Limiares: sim_media_min=${th.sim_media_min}, sim_outro_cep_min=${th.sim_outro_cep_min}. Confirma?`
+    );
+    if (!ok) return;
+    setGeoBulkStatus("");
+    setGeoBulkLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/geo/bulk-apply-outro-cep`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ...th, dry_run: false }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & { detail?: unknown };
+      if (!res.ok) {
+        const msg =
+          typeof data.detail === "string"
+            ? data.detail
+            : Array.isArray(data.detail)
+              ? JSON.stringify(data.detail)
+              : "Falha ao aplicar em massa.";
+        throw new Error(msg);
+      }
+      const fam = Number(data.familias_com_candidato ?? 0);
+      const lin = Number(data.linhas_cadu_atualizadas ?? 0);
+      setGeoBulkLastPreview({ fam, lin });
+      setGeoBulkStatus(
+        `Concluído (servidor): ${fam.toLocaleString("pt-BR")} família(s), ${lin.toLocaleString("pt-BR")} linha(s) atualizadas em raw.cecad__cadu. Recarregando relatório…`
+      );
+      try {
+        await loadGeoReport();
+      } catch {
+        setGeoBulkStatus(
+          `Atualização feita (${lin.toLocaleString("pt-BR")} linhas), mas falhou ao recarregar o relatório. Clique em «Relatório» de novo.`
+        );
+        return;
+      }
+      setGeoBulkStatus(
+        `Concluído: ${fam.toLocaleString("pt-BR")} família(s), ${lin.toLocaleString("pt-BR")} linha(s) no CADU. Relatório atualizado.`
+      );
+    } catch (err) {
+      setGeoBulkStatus(err instanceof Error ? err.message : "Erro ao aplicar em massa.");
+    } finally {
+      setGeoBulkLoading(false);
     }
   }
 
@@ -775,11 +882,73 @@ export default function IngestaoPage({ token }: Props) {
               </div>
               {geoStatus && <p className={geoStatus.includes("atualizada") ? "status-ok" : "error"}>{geoStatus}</p>}
 
-              <div className="vig-actions" style={{ marginTop: "1.25rem" }}>
+              <div
+                className="auth-form"
+                style={{ marginTop: "1.25rem", padding: "0.75rem 0", borderTop: "1px solid var(--color-border, #333)" }}
+              >
+                <p className="ingestao-desc" style={{ marginBottom: "0.5rem" }}>
+                  <strong>Relatório</strong> — cruzamento “outro CEP” (grandes volumes: use a correção em massa abaixo;
+                  o navegador não precisa baixar milhares de linhas JSON).
+                </p>
+                <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={geoRepTodasElegiveis}
+                    onChange={(ev) => setGeoRepTodasElegiveis(ev.target.checked)}
+                    disabled={geoReportLoading}
+                  />
+                  Todas as famílias elegíveis no cruzamento (sem amostra aleatória; consulta longa no PostgreSQL)
+                </label>
+                <label>
+                  Limite de linhas na amostra JSON (0 = sem limite — pode travar o navegador)
+                  <input
+                    type="number"
+                    min={0}
+                    max={200000}
+                    value={geoRepLimite}
+                    onChange={(ev) => setGeoRepLimite(Number(ev.target.value))}
+                    disabled={geoReportLoading}
+                    style={{ marginLeft: "0.35rem", width: "6rem" }}
+                  />
+                </label>
+              </div>
+
+              <div className="vig-actions" style={{ marginTop: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
                 <button type="button" className="btn btn-secondary" onClick={() => void loadGeoReport()} disabled={geoReportLoading}>
                   {geoReportLoading ? "Calculando…" : "Relatório: CADU × geo (CEP)"}
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void geoBulkPreview()}
+                  disabled={geoBulkLoading || geoReportLoading}
+                >
+                  {geoBulkLoading ? "Servidor…" : "Prévia em massa (contagem no servidor)"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void geoBulkApply()}
+                  disabled={geoBulkLoading || geoReportLoading}
+                >
+                  Aplicar CEPs em massa no CADU (uma transação)
+                </button>
               </div>
+              {geoBulkStatus && (
+                <p
+                  className={
+                    geoBulkStatus.startsWith("Prévia:") ||
+                    geoBulkStatus.startsWith("Concluído") ||
+                    geoBulkStatus.includes("Relatório atualizado") ||
+                    geoBulkStatus.startsWith("Atualização feita")
+                      ? "status-ok"
+                      : "error"
+                  }
+                  style={{ marginTop: "0.5rem" }}
+                >
+                  {geoBulkStatus}
+                </p>
+              )}
               {geoReportError && <p className="error">{geoReportError}</p>}
               {geoReport && (
                 <div className="vig-result" style={{ marginTop: "1rem", textAlign: "left" }}>
