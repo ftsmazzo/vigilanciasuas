@@ -152,11 +152,14 @@ async def import_raw_table(
 
     normalized_map: dict[str, str] = {}
     used_names: set[str] = set()
+    reserved = {"id"}  # PK BIGSERIAL da tabela RAW
     for header in headers:
         base = _normalize_identifier(header or "coluna")
+        if base in reserved:
+            base = f"{base}_origem"
         candidate = base
         suffix = 1
-        while candidate in used_names:
+        while candidate in used_names or candidate in reserved:
             suffix += 1
             candidate = f"{base}_{suffix}"
         used_names.add(candidate)

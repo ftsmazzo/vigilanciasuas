@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-type TabId = "cadu" | "pbf" | "bpc" | "sibec";
+type TabId = "cadu" | "pbf" | "bpc" | "sibec" | "geo";
 
 type UploadResult = { ok: boolean; data: Record<string, unknown>; errorText?: string };
 
@@ -84,6 +84,7 @@ const TARGET_LABELS: Record<string, string> = {
   sibec__programa_bolsa_familia: "Programa Bolsa Família",
   bpc__beneficio_prestacao_continuada: "BPC — Prestação Continuada",
   sibec__manutencoes: "SIBEC — Manutenções mensais",
+  geo__tbl_geo: "Geo — logradouros (Ribeirão / CEP)",
 };
 
 function humanBaseTitle(run: IngestionRunRow): string {
@@ -209,6 +210,16 @@ export default function IngestaoPage({ token }: Props) {
   const [sibecStatus, setSibecStatus] = useState("");
   const [sibecProgress, setSibecProgress] = useState(0);
   const [sibecUploading, setSibecUploading] = useState(false);
+
+  // Base geográfica (tbl_geo — CSV com vírgula)
+  const [geoFile, setGeoFile] = useState<File | null>(null);
+  const [geoStrategy, setGeoStrategy] = useState("replace");
+  const [geoStatus, setGeoStatus] = useState("");
+  const [geoProgress, setGeoProgress] = useState(0);
+  const [geoUploading, setGeoUploading] = useState(false);
+  const [geoReport, setGeoReport] = useState<Record<string, unknown> | null>(null);
+  const [geoReportLoading, setGeoReportLoading] = useState(false);
+  const [geoReportError, setGeoReportError] = useState("");
 
   async function submitCadu(e: FormEvent) {
     e.preventDefault();
@@ -342,11 +353,67 @@ export default function IngestaoPage({ token }: Props) {
     }
   }
 
+  async function submitGeo(e: FormEvent) {
+    e.preventDefault();
+    setGeoStatus("");
+    setGeoProgress(0);
+    if (!geoFile) {
+      setGeoStatus("Selecione o arquivo tbl_geo.csv.");
+      return;
+    }
+    const fd = new FormData();
+    fd.append("file", geoFile);
+    fd.append("source", "geo");
+    fd.append("dataset", "tbl_geo");
+    fd.append("strategy", geoStrategy);
+    fd.append("csv_delimiter", ",");
+    setGeoUploading(true);
+    const res = await runIngestionUpload(fd, token, setGeoProgress);
+    setGeoUploading(false);
+    if (res.ok) {
+      setGeoProgress(100);
+      setGeoStatus(
+        `Tabela raw.geo__tbl_geo atualizada. ${String(res.data.row_count ?? 0)} linhas. Use o relatório abaixo para cruzar com o CADU.`,
+      );
+      setGeoFile(null);
+      await loadRuns();
+    } else {
+      setGeoStatus(res.errorText || "Falha na ingestão.");
+    }
+  }
+
+  async function loadGeoReport() {
+    setGeoReportError("");
+    setGeoReport(null);
+    setGeoReportLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/geo/match-report`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & { detail?: unknown };
+      if (!res.ok) {
+        const msg =
+          typeof data.detail === "string"
+            ? data.detail
+            : Array.isArray(data.detail)
+              ? JSON.stringify(data.detail)
+              : "Falha ao gerar relatório.";
+        throw new Error(msg);
+      }
+      setGeoReport(data);
+    } catch (err) {
+      setGeoReportError(err instanceof Error ? err.message : "Erro ao consultar relatório.");
+    } finally {
+      setGeoReportLoading(false);
+    }
+  }
+
   const tabs: { id: TabId; label: string; hint: string }[] = [
     { id: "cadu", label: "CADU", hint: "Cadastro Único (CECAD)" },
     { id: "pbf", label: "Bolsa Família", hint: "Programa Bolsa Família" },
     { id: "bpc", label: "BPC", hint: "Benefício Prestação Continuada" },
     { id: "sibec", label: "SIBEC Manutenções", hint: "Analíticos mensais por competência" },
+    { id: "geo", label: "Geo / CEP", hint: "Logradouros e teste de cruzamento" },
   ];
 
   return (
@@ -592,6 +659,178 @@ export default function IngestaoPage({ token }: Props) {
                 <small>{sibecUploading ? `Enviando: ${sibecProgress}%` : "Aguardando envio"}</small>
               </div>
               {sibecStatus && <p className={sibecStatus.includes("sucesso") ? "status-ok" : "error"}>{sibecStatus}</p>}
+            </section>
+          )}
+
+          {tab === "geo" && (
+            <section className="ingestao-panel">
+              <h1>Geo — base local (tbl_geo)</h1>
+              <p className="ingestao-desc">
+                Envie o CSV <code className="inline-code">tbl_geo.csv</code> (cabeçalho com{" "}
+                <code className="inline-code">cep_norm</code>, <code className="inline-code">endereco</code>,{" "}
+                <code className="inline-code">bairro</code>, etc.). Delimitador deve ser{" "}
+                <strong>vírgula</strong>. A API grava em <code className="inline-code">raw.geo__tbl_geo</code>.
+                Depois, o relatório cruza CEP normalizado do CADU com essa tabela e mostra quantas famílias têm CEP
+                ambíguo, sem correspondência ou match estrito de rua+bairro.
+              </p>
+              <form onSubmit={submitGeo} className="auth-form">
+                <label>
+                  Estratégia
+                  <select
+                    value={geoStrategy}
+                    onChange={(ev) => setGeoStrategy(ev.target.value)}
+                    disabled={geoUploading}
+                  >
+                    <option value="replace">Substituir tabela inteira (recomendado)</option>
+                    <option value="append">Agregar linhas</option>
+                  </select>
+                </label>
+                <label>
+                  Arquivo CSV (tbl_geo)
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(ev) => setGeoFile(ev.target.files?.[0] || null)}
+                    disabled={geoUploading}
+                    required
+                  />
+                </label>
+                <button type="submit" disabled={geoUploading}>
+                  {geoUploading ? "Enviando…" : "Carregar tbl_geo"}
+                </button>
+              </form>
+              <div className="progress-wrap" aria-live="polite">
+                <div className="progress-track">
+                  <div className="progress-fill" style={{ width: `${geoProgress}%` }} />
+                </div>
+                <small>{geoUploading ? `Enviando: ${geoProgress}%` : "Aguardando envio"}</small>
+              </div>
+              {geoStatus && <p className={geoStatus.includes("atualizada") ? "status-ok" : "error"}>{geoStatus}</p>}
+
+              <div className="vig-actions" style={{ marginTop: "1.25rem" }}>
+                <button type="button" className="btn btn-secondary" onClick={() => void loadGeoReport()} disabled={geoReportLoading}>
+                  {geoReportLoading ? "Calculando…" : "Relatório: CADU × geo (CEP)"}
+                </button>
+              </div>
+              {geoReportError && <p className="error">{geoReportError}</p>}
+              {geoReport && (
+                <div className="vig-result" style={{ marginTop: "1rem", textAlign: "left" }}>
+                  <p className="ingestao-desc" style={{ textAlign: "left" }}>
+                    <strong>pg_trgm</strong> (similaridade de texto):{" "}
+                    {geoReport.pg_trgm_disponivel === true
+                      ? "ativo — faixas abaixo usam a melhor similaridade entre o CADU e alguma linha da geo com o mesmo CEP."
+                      : "indisponível — peça CREATE EXTENSION pg_trgm no PostgreSQL para ver faixas e suspeita de CEP errado."}
+                  </p>
+                  {geoReport.parametros_relatorio != null && (
+                    <p className="ingestao-desc" style={{ textAlign: "left", marginTop: "0.5rem" }}>
+                      <strong>Parâmetros</strong> desta consulta (sobrescreva na URL do endpoint{" "}
+                      <code className="inline-code">/api/v1/geo/match-report</code>):{" "}
+                      <code className="inline-code" style={{ fontSize: "0.78rem" }}>
+                        {JSON.stringify(geoReport.parametros_relatorio)}
+                      </code>
+                    </p>
+                  )}
+                  <dl className="run-card-meta" style={{ marginTop: "0.75rem" }}>
+                    {(() => {
+                      const pr = geoReport.parametros_relatorio as Record<string, number> | undefined;
+                      const simAlta = typeof pr?.sim_alta_min === "number" ? pr.sim_alta_min : 0.65;
+                      const simMedia = typeof pr?.sim_media_min === "number" ? pr.sim_media_min : 0.35;
+                      const fmt = (n: number) =>
+                        n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                      const metricRows: [string, string][] = [
+                        ["familias_total", "Famílias (1 por código no CADU)"],
+                        ["familias_cep_invalido", "Famílias com CEP inválido/vazio"],
+                        ["familias_cep_valido", "Famílias com CEP válido"],
+                        ["familias_sem_linha_geo_no_cep", "CEP válido, mas não existe na tbl_geo"],
+                        ["familias_cep_unico_na_base", "CEP com exatamente 1 linha na tbl_geo"],
+                        ["familias_cep_ambiguo", "CEP com mais de 1 logradouro na tbl_geo"],
+                        ["familias_match_estrito_rua_bairro", "Match estrito: CEP + rua + bairro (igual, lower)"],
+                        ["familias_com_cep_na_geo", "Famílias cujo CEP existe na geo (≥1 linha)"],
+                        [
+                          "familias_mesmo_cep_sim_alta",
+                          `Mesmo CEP: similaridade média ≥ ${fmt(simAlta)} (rua+bairro)`,
+                        ],
+                        ["familias_mesmo_cep_sim_media", `Mesmo CEP: similaridade ${fmt(simMedia)}–${fmt(simAlta)}`],
+                        ["familias_mesmo_cep_sim_baixa", `Mesmo CEP: similaridade abaixo de ${fmt(simMedia)}`],
+                        ["familias_mesmo_cep_sem_texto_para_comparar", "CEP na geo, mas logradouro e bairro vazios no CADU"],
+                        ["geo_linhas_total", "Linhas na tbl_geo"],
+                        ["geo_ceps_distintos", "CEPs distintos na tbl_geo"],
+                      ];
+                      return metricRows;
+                    })().map(([key, label]) => (
+                      <div key={key}>
+                        <dt>{label}</dt>
+                        <dd>
+                          {typeof geoReport[key] === "number" || typeof geoReport[key] === "bigint"
+                            ? Number(geoReport[key]).toLocaleString("pt-BR")
+                            : String(geoReport[key] ?? "—")}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="ingestao-desc" style={{ textAlign: "left", marginTop: "1rem" }}>
+                    Metodologia (ordem: CEP → depois grafia):
+                  </p>
+                  <pre
+                    className="inline-code"
+                    style={{
+                      display: "block",
+                      padding: "0.75rem",
+                      overflow: "auto",
+                      fontSize: "0.78rem",
+                      maxHeight: "16rem",
+                    }}
+                  >
+                    {JSON.stringify(geoReport.metodologia ?? {}, null, 2)}
+                  </pre>
+                  <p className="ingestao-desc" style={{ textAlign: "left", marginTop: "1rem" }}>
+                    Amostra — CEP ambíguo (vários logradouros na geo para o mesmo CEP):
+                  </p>
+                  <pre
+                    className="inline-code"
+                    style={{
+                      display: "block",
+                      padding: "0.75rem",
+                      overflow: "auto",
+                      fontSize: "0.78rem",
+                      maxHeight: "12rem",
+                    }}
+                  >
+                    {JSON.stringify(geoReport.amostra_familias_cep_ambiguo ?? [], null, 2)}
+                  </pre>
+                  <p className="ingestao-desc" style={{ textAlign: "left", marginTop: "1rem" }}>
+                    Amostra — CEP do CADU ausente na tbl_geo:
+                  </p>
+                  <pre
+                    className="inline-code"
+                    style={{
+                      display: "block",
+                      padding: "0.75rem",
+                      overflow: "auto",
+                      fontSize: "0.78rem",
+                      maxHeight: "12rem",
+                    }}
+                  >
+                    {JSON.stringify(geoReport.amostra_familias_sem_geo_no_cep ?? [], null, 2)}
+                  </pre>
+                  <p className="ingestao-desc" style={{ textAlign: "left", marginTop: "1rem" }}>
+                    Amostra — suspeita de CEP errado: melhor parecer com linha da geo em <strong>outro</strong> CEP
+                    (texto parecido; revisar CEP antes da grafia).
+                  </p>
+                  <pre
+                    className="inline-code"
+                    style={{
+                      display: "block",
+                      padding: "0.75rem",
+                      overflow: "auto",
+                      fontSize: "0.78rem",
+                      maxHeight: "18rem",
+                    }}
+                  >
+                    {JSON.stringify(geoReport.amostra_suspeita_cep_errado_outro_cep_mais_parecido ?? [], null, 2)}
+                  </pre>
+                </div>
+              )}
             </section>
           )}
         </main>
