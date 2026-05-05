@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -51,6 +52,20 @@ def _geo_columns(db: Session) -> set[str]:
     return {r[0] for r in rows}
 
 
+def _cadu_columns(db: Session) -> set[str]:
+    rows = db.execute(
+        text(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'raw' AND table_name = :t
+            """
+        ),
+        {"t": CADU_TABLE},
+    ).all()
+    return {r[0] for r in rows}
+
+
 def _ensure_vig_and_trgm(db: Session) -> bool:
     """Garante schema vig, funções CADU e tenta pg_trgm (similaridade de texto)."""
     with db.bind.begin() as conn:
@@ -83,6 +98,102 @@ def _serialize_row(r: dict[str, Any]) -> dict[str, Any]:
         else:
             out[k] = v
     return out
+
+
+class CepCorrecaoItem(BaseModel):
+    cod_fam: str = Field(..., min_length=1, max_length=64)
+    cep_candidato: str = Field(..., min_length=1, max_length=32)
+
+
+class ApplyCepCorrecoesBody(BaseModel):
+    """Atualiza `d_num_cep_logradouro_fam` no CADU RAW para todas as linhas de cada código familiar."""
+
+    updates: list[CepCorrecaoItem] = Field(..., min_length=1, max_length=500)
+
+
+@router.post("/apply-cep-suggestions")
+def geo_apply_cep_suggestions(
+    body: ApplyCepCorrecoesBody,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """
+    Aplica CEPs candidatos (ex.: da amostra `amostra_suspeita_cep_errado_outro_cep_mais_parecido`) na tabela
+    `raw.cecad__cadu`: todas as linhas cuja família normalizada coincide com `cod_fam`.
+
+    Exige que cada `cep_candidato` normalizado exista em pelo menos uma linha de `raw.geo__tbl_geo` (`cep_norm`).
+    """
+    if not _raw_table_exists(db, CADU_TABLE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tabela raw.cecad__cadu não encontrada. Ingeste o CADU antes.",
+        )
+    if not _raw_table_exists(db, GEO_TABLE):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tabela raw.geo__tbl_geo não encontrada.",
+        )
+
+    cadu_cols = _cadu_columns(db)
+    if "d_cod_familiar_fam" not in cadu_cols or "d_num_cep_logradouro_fam" not in cadu_cols:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="CADU RAW sem colunas d_cod_familiar_fam ou d_num_cep_logradouro_fam.",
+        )
+    if "cep_norm" not in _geo_columns(db):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Geo RAW sem coluna cep_norm.",
+        )
+
+    db.execute(text("CREATE SCHEMA IF NOT EXISTS vig"))
+    ensure_vig_functions(db.connection())
+
+    # Último par vence se houver cod_fam repetido no payload
+    merged: dict[str, str] = {}
+    for item in body.updates:
+        cod_raw = item.cod_fam.strip()
+        cep_raw = item.cep_candidato.strip()
+        cod_n = db.scalar(text("SELECT vig.norm_familia_cod(:t)"), {"t": cod_raw})
+        cep_n = db.scalar(text("SELECT vig.norm_cep(:t)"), {"t": cep_raw})
+        if not cod_n:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Código de família inválido após normalização: {item.cod_fam!r}",
+            )
+        if not cep_n:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"CEP candidato inválido após normalização: {item.cep_candidato!r}",
+            )
+        exists_geo = db.scalar(
+            text(f"SELECT 1 FROM raw.{_qi(GEO_TABLE)} WHERE cep_norm = :c LIMIT 1"),
+            {"c": cep_n},
+        )
+        if not exists_geo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"CEP {cep_n} não existe em raw.{GEO_TABLE} (cep_norm). Confira a base geo.",
+            )
+        merged[cod_n] = cep_n
+
+    sql_one = f"""
+    UPDATE raw.{_qi(CADU_TABLE)} AS c
+    SET d_num_cep_logradouro_fam = :cep_new
+    WHERE vig.norm_familia_cod(c.d_cod_familiar_fam::text) = :cod_fam
+    """
+    linhas = 0
+    for cod_n, cep_n in merged.items():
+        res = db.execute(text(sql_one), {"cod_fam": cod_n, "cep_new": cep_n})
+        linhas += res.rowcount or 0
+    db.commit()
+
+    cods_list = list(merged.keys())
+    return {
+        "familias_unicas_atualizadas": len(cods_list),
+        "linhas_cadu_atualizadas": linhas,
+        "pares": [{"cod_fam": c, "cep_aplicado": merged[c]} for c in cods_list],
+    }
 
 
 @router.get("/match-report")

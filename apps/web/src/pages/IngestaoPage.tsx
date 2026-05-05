@@ -220,6 +220,8 @@ export default function IngestaoPage({ token }: Props) {
   const [geoReport, setGeoReport] = useState<Record<string, unknown> | null>(null);
   const [geoReportLoading, setGeoReportLoading] = useState(false);
   const [geoReportError, setGeoReportError] = useState("");
+  const [geoCepApplyLoading, setGeoCepApplyLoading] = useState(false);
+  const [geoCepApplyStatus, setGeoCepApplyStatus] = useState("");
 
   async function submitCadu(e: FormEvent) {
     e.preventDefault();
@@ -405,6 +407,72 @@ export default function IngestaoPage({ token }: Props) {
       setGeoReportError(err instanceof Error ? err.message : "Erro ao consultar relatório.");
     } finally {
       setGeoReportLoading(false);
+    }
+  }
+
+  async function applyGeoCepSuggestionsFromSample() {
+    const raw = geoReport?.amostra_suspeita_cep_errado_outro_cep_mais_parecido;
+    if (!Array.isArray(raw) || raw.length === 0) return;
+    const updates = raw
+      .map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          cod_fam: String(r.cod_fam ?? "").trim(),
+          cep_candidato: String(r.cep_candidato ?? "").trim(),
+        };
+      })
+      .filter((u) => u.cod_fam.length > 0 && u.cep_candidato.length > 0);
+    if (updates.length === 0) {
+      setGeoCepApplyStatus("Nenhum par código familiar + CEP candidato na amostra.");
+      return;
+    }
+    const ok = window.confirm(
+      `Atualizar o CEP no CADU bruto (raw.cecad__cadu) para ${updates.length} família(s) desta amostra? ` +
+        "Todas as linhas de cada código familiar receberão o CEP candidato da geo. Esta ação não tem desfazer automático."
+    );
+    if (!ok) return;
+
+    setGeoCepApplyStatus("");
+    setGeoCepApplyLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/geo/apply-cep-suggestions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ updates }),
+      });
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown> & { detail?: unknown };
+      if (!res.ok) {
+        const msg =
+          typeof data.detail === "string"
+            ? data.detail
+            : Array.isArray(data.detail)
+              ? JSON.stringify(data.detail)
+              : "Falha ao aplicar CEPs.";
+        throw new Error(msg);
+      }
+      const fam = data.familias_unicas_atualizadas;
+      const lin = data.linhas_cadu_atualizadas;
+      setGeoCepApplyStatus(
+        `Atualizado: ${String(fam)} família(s), ${String(lin)} linha(s) no CADU. Recalculando relatório…`
+      );
+      try {
+        await loadGeoReport();
+      } catch {
+        setGeoCepApplyStatus(
+          `CEPs aplicados (${String(fam)} fam., ${String(lin)} linhas), mas falhou ao recarregar o relatório. Clique em «Relatório» de novo.`
+        );
+        return;
+      }
+      setGeoCepApplyStatus(
+        `Concluído: ${String(fam)} família(s), ${String(lin)} linha(s) alteradas em raw.cecad__cadu.`
+      );
+    } catch (err) {
+      setGeoCepApplyStatus(err instanceof Error ? err.message : "Erro ao aplicar sugestões de CEP.");
+    } finally {
+      setGeoCepApplyLoading(false);
     }
   }
 
@@ -817,6 +885,35 @@ export default function IngestaoPage({ token }: Props) {
                     Amostra — suspeita de CEP errado: melhor parecer com linha da geo em <strong>outro</strong> CEP
                     (texto parecido; revisar CEP antes da grafia).
                   </p>
+                  <div className="vig-actions" style={{ marginTop: "0.5rem", marginBottom: "0.5rem" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={
+                        geoCepApplyLoading ||
+                        geoReportLoading ||
+                        !Array.isArray(geoReport.amostra_suspeita_cep_errado_outro_cep_mais_parecido) ||
+                        (geoReport.amostra_suspeita_cep_errado_outro_cep_mais_parecido as unknown[]).length === 0
+                      }
+                      onClick={() => void applyGeoCepSuggestionsFromSample()}
+                    >
+                      {geoCepApplyLoading ? "Aplicando CEPs…" : "Aplicar CEPs candidatos desta amostra no CADU"}
+                    </button>
+                  </div>
+                  {geoCepApplyStatus && (
+                    <p
+                      className={
+                        geoCepApplyStatus.startsWith("Concluído:") ||
+                        geoCepApplyStatus.startsWith("Atualizado:") ||
+                        geoCepApplyStatus.includes("aplicados (")
+                          ? "status-ok"
+                          : "error"
+                      }
+                      style={{ marginBottom: "0.5rem" }}
+                    >
+                      {geoCepApplyStatus}
+                    </p>
+                  )}
                   <pre
                     className="inline-code"
                     style={{
