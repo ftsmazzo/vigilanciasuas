@@ -482,13 +482,16 @@ def geo_cep_match_report(
         description="Mínimo de sim_outro_cep para amostra e trocas (padrão 0,6).",
     ),
     amostra_pool: int = Query(
-        120,
+        8_000,
         ge=1,
         le=100_000,
-        description="Com todas_elegiveis_outro_cep=false: famílias aleatórias no pool do cruzamento outro CEP.",
+        description=(
+            "Com todas_elegiveis_outro_cep=false: quantas famílias elegíveis entram no sorteio "
+            "antes do cruzamento com a geo (aumente para JSON maior sem marcar 'todas')."
+        ),
     ),
     amostra_limite: int = Query(
-        25,
+        5_000,
         ge=0,
         le=200_000,
         description="Máximo de linhas na amostra JSON (0 = sem limite; use com cuidado no navegador).",

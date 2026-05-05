@@ -221,7 +221,9 @@ export default function IngestaoPage({ token }: Props) {
   const [geoReportLoading, setGeoReportLoading] = useState(false);
   const [geoReportError, setGeoReportError] = useState("");
   const [geoRepTodasElegiveis, setGeoRepTodasElegiveis] = useState(false);
-  const [geoRepLimite, setGeoRepLimite] = useState(5000);
+  /** Famílias elegíveis sorteadas para o cruzamento quando não usa “todas” (amostra_pool na API). */
+  const [geoRepPool, setGeoRepPool] = useState(8_000);
+  const [geoRepLimite, setGeoRepLimite] = useState(5_000);
   const [geoBulkLoading, setGeoBulkLoading] = useState(false);
   const [geoBulkStatus, setGeoBulkStatus] = useState("");
   const [geoBulkLastPreview, setGeoBulkLastPreview] = useState<{ fam: number; lin: number } | null>(null);
@@ -397,6 +399,9 @@ export default function IngestaoPage({ token }: Props) {
       const q = new URLSearchParams();
       q.set("todas_elegiveis_outro_cep", geoRepTodasElegiveis ? "true" : "false");
       q.set("amostra_limite", String(geoRepLimite));
+      if (!geoRepTodasElegiveis) {
+        q.set("amostra_pool", String(geoRepPool));
+      }
       const res = await fetch(`${API_URL}/api/v1/geo/match-report?${q}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -416,7 +421,7 @@ export default function IngestaoPage({ token }: Props) {
     } finally {
       setGeoReportLoading(false);
     }
-  }, [token, geoRepTodasElegiveis, geoRepLimite]);
+  }, [token, geoRepTodasElegiveis, geoRepLimite, geoRepPool]);
 
   function bulkGeoThresholds(): { sim_media_min: number; sim_outro_cep_min: number } {
     const pr = geoReport?.parametros_relatorio as Record<string, unknown> | undefined;
@@ -887,8 +892,9 @@ export default function IngestaoPage({ token }: Props) {
                 style={{ marginTop: "1.25rem", padding: "0.75rem 0", borderTop: "1px solid var(--color-border, #333)" }}
               >
                 <p className="ingestao-desc" style={{ marginBottom: "0.5rem" }}>
-                  <strong>Relatório</strong> — cruzamento “outro CEP” (grandes volumes: use a correção em massa abaixo;
-                  o navegador não precisa baixar milhares de linhas JSON).
+                  <strong>Relatório</strong> — cruzamento “outro CEP”. Sem “todas as famílias”, aumente o{" "}
+                  <em>pool aleatório</em> para encher a amostra JSON até o limite de linhas; volume muito grande: use a
+                  correção em massa abaixo.
                 </p>
                 <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.5rem" }}>
                   <input
@@ -898,6 +904,19 @@ export default function IngestaoPage({ token }: Props) {
                     disabled={geoReportLoading}
                   />
                   Todas as famílias elegíveis no cruzamento (sem amostra aleatória; consulta longa no PostgreSQL)
+                </label>
+                <label style={{ display: "block", marginBottom: "0.5rem", opacity: geoRepTodasElegiveis ? 0.55 : 1 }}>
+                  Pool aleatório — quantas famílias elegíveis entram no sorteio (só quando a opção acima{" "}
+                  <strong>não</strong> está marcada; máx. 100 000 na API)
+                  <input
+                    type="number"
+                    min={1}
+                    max={100000}
+                    value={geoRepPool}
+                    onChange={(ev) => setGeoRepPool(Number(ev.target.value))}
+                    disabled={geoReportLoading || geoRepTodasElegiveis}
+                    style={{ marginLeft: "0.35rem", width: "6.5rem" }}
+                  />
                 </label>
                 <label>
                   Limite de linhas na amostra JSON (0 = sem limite — pode travar o navegador)
